@@ -1,4 +1,12 @@
-import React, { useEffect, useRef, useState, useCallback } from 'react';
+/// <reference types="react" />
+import React, {
+  useEffect,
+  useRef,
+  useState,
+  useCallback,
+  ReactElement,
+  JSX
+} from 'react';
 import {
   Dimensions,
   Image,
@@ -8,16 +16,23 @@ import {
   TouchableOpacity,
   View,
   ActivityIndicator,
+  ScrollView,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import { io, Socket } from 'socket.io-client';
 import { API_BASE_URL, authHeaders } from '../api';
-
 import { useAuth } from '../auth/AuthContext';
+import DiceOne from '../assets/dice-six-faces-one.svg';
+import DiceTwo from '../assets/dice-six-faces-two.svg';
+import DiceThree from '../assets/dice-six-faces-three.svg';
+import DiceFour from '../assets/dice-six-faces-four.svg';
+import DiceFive from '../assets/dice-six-faces-five.svg';
+import DiceSix from '../assets/dice-six-faces-six.svg';
 
-const { width: W } = Dimensions.get('window');
-const s = (size: number) => (W / 390) * size;
+// ─── CONSTANTS ───
+const { width: W, height: H } = Dimensions.get('window');
+const s = (size: number) => (Math.min(W, H) / 390) * size;
 const BOARD_SIZE = W;
 const SOURCE_BOARD_WIDTH = 1803;
 const SOURCE_BOARD_HEIGHT = 1799;
@@ -31,32 +46,38 @@ const TILE_W = GRID_WIDTH / 15;
 const TILE_H = GRID_HEIGHT / 15;
 const PAWN_SIZE = Math.min(TILE_W, TILE_H) * 0.9;
 const PAWN_TIP = PAWN_SIZE * 0.86;
-const TEAM_CARD_WIDTH = BOARD_SIZE * 0.31;
-const TEAM_CARD_HEIGHT = BOARD_SIZE * 0.285;
+const CREATOR_ID = 'S1101';
 
+// ─── AREA TRACK DATA ───
+const DICE_IMAGE_BY_VALUE: Record<number, any> = {
+  1: DiceOne,
+  2: DiceTwo,
+  3: DiceThree,
+  4: DiceFour,
+  5: DiceFive,
+  6: DiceSix,
+};
 const AREA_TRACK: Record<number, Array<[number, number]>> = {
-  // area 1 (blue) – bottom-left quadrant track cells 1-18
   1: [
     [8, 9],
     [8, 10],
     [8, 11],
     [8, 12],
     [8, 13],
-    [8, 14], // cells 1-6
+    [8, 14],
     [7, 14],
     [7, 13],
     [7, 12],
     [7, 11],
     [7, 10],
-    [7, 9], // cells 7-12 (home col)
+    [7, 9],
     [6, 14],
-    [6, 13], // cells 13-14 (start)
+    [6, 13],
     [6, 12],
     [6, 11],
     [6, 10],
-    [6, 9], // cells 15-18
+    [6, 9],
   ],
-  // area 2 (red) – top-left
   2: [
     [5, 8],
     [4, 8],
@@ -77,7 +98,6 @@ const AREA_TRACK: Record<number, Array<[number, number]>> = {
     [4, 6],
     [5, 6],
   ],
-  // area 3 (green) – top-right
   3: [
     [6, 5],
     [6, 4],
@@ -98,7 +118,6 @@ const AREA_TRACK: Record<number, Array<[number, number]>> = {
     [8, 4],
     [8, 5],
   ],
-  // area 4 (yellow) – bottom-right
   4: [
     [9, 6],
     [10, 6],
@@ -121,7 +140,7 @@ const AREA_TRACK: Record<number, Array<[number, number]>> = {
   ],
 };
 
-// Home stretch (cells 8-12) per color
+// ─── HOME TRACK DATA ───
 const HOME_TRACK: Record<string, Array<[number, number]>> = {
   blue: [
     [7, 14],
@@ -131,7 +150,6 @@ const HOME_TRACK: Record<string, Array<[number, number]>> = {
     [7, 10],
     [7, 9],
   ],
-
   red: [
     [0, 7],
     [1, 7],
@@ -140,7 +158,6 @@ const HOME_TRACK: Record<string, Array<[number, number]>> = {
     [4, 7],
     [5, 7],
   ],
-
   green: [
     [7, 0],
     [7, 1],
@@ -149,7 +166,6 @@ const HOME_TRACK: Record<string, Array<[number, number]>> = {
     [7, 4],
     [7, 5],
   ],
-
   yellow: [
     [14, 7],
     [13, 7],
@@ -160,6 +176,7 @@ const HOME_TRACK: Record<string, Array<[number, number]>> = {
   ],
 };
 
+// ─── BASE POSITIONS ───
 const BASE_POSITIONS: Record<string, Array<[number, number]>> = {
   blue: [
     [1.12, 11.47],
@@ -187,6 +204,7 @@ const BASE_POSITIONS: Record<string, Array<[number, number]>> = {
   ],
 };
 
+// ─── FINISH POSITIONS ───
 const FINISH_POSITIONS: Record<PawnColor, [number, number]> = {
   red: [6, 7],
   green: [7, 6],
@@ -194,6 +212,7 @@ const FINISH_POSITIONS: Record<PawnColor, [number, number]> = {
   yellow: [8, 7],
 };
 
+// ─── HOME AREA MAPPING ───
 const HOME_AREA_BY_COLOR: Record<PawnColor, number> = {
   blue: 1,
   red: 2,
@@ -208,149 +227,15 @@ const COLOR_BY_HOME_AREA: Record<number, PawnColor> = {
   4: 'yellow',
 };
 
-function positionToGrid(pos: string, color: string): [number, number] | null {
-  if (!pos || pos === '0') return null;
-
-  // finished pawns
-  if (pos === 'finished') {
-    return FINISH_POSITIONS[color as PawnColor];
-  }
-
-  // home track
-  const homeMatch = pos.match(/home-area-(\d+)-id-(\d+)/);
-
-  if (homeMatch) {
-    const homeId = Number(homeMatch[2]);
-
-    const homeTrack = HOME_TRACK[color];
-
-    return homeTrack?.[homeId - 1] ?? null;
-  }
-
-  // normal track
-  const match = pos.match(/cell-area-(\d+)-id-(\d+)/);
-
-  if (!match) return null;
-
-  const areaId = Number(match[1]);
-  const cellNum = Number(match[2]);
-
-  const track = AREA_TRACK[areaId];
-
-  if (!track) return null;
-
-  return track[cellNum - 1] ?? null;
-}
-
-function gridToPixel(col: number, row: number) {
-  return {
-    left: GRID_LEFT + col * TILE_W + TILE_W / 2 - PAWN_SIZE / 2,
-    top: GRID_TOP + row * TILE_H + TILE_H / 2 - PAWN_TIP,
-  };
-}
-const renderDebugGrid = () => {
-  const cells = [];
-
-  for (let row = 0; row < 15; row++) {
-    for (let col = 0; col < 15; col++) {
-      cells.push(
-        <View
-          key={`${row}-${col}`}
-          style={{
-            position: 'absolute',
-            left: GRID_LEFT + col * TILE_W,
-            top: GRID_TOP + row * TILE_H,
-            width: TILE_W,
-            height: TILE_H,
-            borderWidth: 1,
-            borderColor: 'rgba(255,0,0,0.5)',
-            justifyContent: 'center',
-            alignItems: 'center',
-          }}
-        >
-          <Text
-            style={{
-              fontSize: 8,
-              color: 'red',
-              fontWeight: 'bold',
-            }}
-          >
-            {col},{row}
-          </Text>
-        </View>,
-      );
-    }
-  }
-
-  return cells;
-};
-function homeCardPosition(color: PawnColor) {
-  const centers: Record<PawnColor, [number, number]> = {
-    red: [3, 3],
-    green: [12, 3],
-    blue: [3, 12],
-    yellow: [12, 12],
-  };
-  const [col, row] = centers[color];
-
-  return {
-    left: GRID_LEFT + col * TILE_W - TEAM_CARD_WIDTH / 2,
-    top: GRID_TOP + row * TILE_H - TEAM_CARD_HEIGHT / 2,
-  };
-}
-
-// ─── types ────────────────────────────────────────────────────────────────────
-type PawnColor = 'red' | 'green' | 'yellow' | 'blue';
-
-interface Pawn {
-  id: string;
-  playerId: string;
-  color: PawnColor;
-  type: string;
-  currentPosition: string;
-  moves: number;
-}
-
-const normalizePawnType = (type?: string | null) =>
-  String(type || '').toLowerCase();
-
-const normalizePawnPosition = (position?: string | number | null) =>
-  String(position ?? '').trim();
-
-const isBasePawn = (pawn: Pawn) => {
-  const position = normalizePawnPosition(pawn.currentPosition);
-
-  return (
-    normalizePawnType(pawn.type) === 'base' || !position || position === '0'
-  );
+// ─── COLOR ACCENTS ───
+const COLOR_ACCENT: Record<PawnColor, string> = {
+  red: '#e32425',
+  green: '#0fba53',
+  yellow: '#ff8a00',
+  blue: '#1179cf',
 };
 
-const isCenterPawn = (pawn: Pawn) =>
-  normalizePawnType(pawn.type) === 'center' ||
-  normalizePawnPosition(pawn.currentPosition) === 'finished';
-
-interface Player {
-  playerId: string;
-  playerName: string;
-  color: PawnColor;
-  moves: number;
-  currentDiceRollBalance: number;
-  home: number;
-  rank?: number | null;
-  winPosition?: number | null;
-  teamName?: string;
-}
-
-const PAWN_IMAGES: Record<PawnColor, ReturnType<typeof require>> = {
-  red: require('../assets/gameAssets/pawn-red.png'),
-  green: require('../assets/gameAssets/pawn-green.png'),
-  yellow: require('../assets/gameAssets/pawn-yellow.png'),
-  blue: require('../assets/gameAssets/pawn-blue.png'),
-};
-
-const getPawnImage = (color?: string | null) =>
-  PAWN_IMAGES[color as PawnColor] || PAWN_IMAGES.blue;
-
+// ─── TEAM LOGOS ───
 const teamLogos: Record<string, ReturnType<typeof require>> = {
   'Andhra Blasters': require('../assets/teamLogo/AndhraBlasters.png'),
   AndhraBlasters: require('../assets/teamLogo/AndhraBlasters.png'),
@@ -394,10 +279,58 @@ const teamLogos: Record<string, ReturnType<typeof require>> = {
   RajasthanStormers: require('../assets/teamLogo/RajasthanStormers.png'),
 };
 
+// ─── PAWN IMAGES ───
+const PAWN_IMAGES: Record<PawnColor, ReturnType<typeof require>> = {
+  red: require('../assets/gameAssets/pawn-red.png'),
+  green: require('../assets/gameAssets/pawn-green.png'),
+  yellow: require('../assets/gameAssets/pawn-yellow.png'),
+  blue: require('../assets/gameAssets/pawn-blue.png'),
+};
+
+// ─── TYPES ───
+type PawnColor = 'red' | 'green' | 'yellow' | 'blue';
+
+interface Pawn {
+  id: string;
+  playerId: string;
+  color: PawnColor;
+  type: string;
+  currentPosition: string;
+  moves: number;
+}
+
+interface Player {
+  playerId: string;
+  playerName: string;
+  color: PawnColor;
+  moves: number;
+  currentDiceRollBalance: number;
+  home: number;
+  rank?: number | null;
+  winPosition?: number | null;
+  teamName?: string;
+  lastMovedAt?: string;
+  movesLost: number;
+  kills: number;
+  hearts: number;
+}
+
+interface OtherBoard {
+  id: number;
+  players: Player[];
+}
+type DiceByPlayerRow = {
+  playerId: string;
+  teamId?: string;
+  diceValue: number | null;
+  uploadId?: string | null;
+  rolledAt?: string | null;
+};
+
+// ─── HELPER FUNCTIONS ───
 const cleanupTeamName = (team?: string | null) => {
   const raw = String(team || '').trim();
   const fileName = raw.split(/[\\/]/).pop() || raw;
-
   return fileName
     .replace(/\.(png|jpg|jpeg|webp)$/i, '')
     .replace(/logo$/i, '')
@@ -418,9 +351,7 @@ const normalizedTeamLogos = Object.entries(teamLogos).reduce<
 
 const getTeamLogo = (team?: string | null) => {
   if (!team) return null;
-
   const cleanedName = cleanupTeamName(team);
-
   return (
     teamLogos[cleanedName] ||
     normalizedTeamLogos[normalizeTeamName(cleanedName)] ||
@@ -428,333 +359,107 @@ const getTeamLogo = (team?: string | null) => {
   );
 };
 
+const getPawnImage = (color?: string | null) =>
+  PAWN_IMAGES[color as PawnColor] || PAWN_IMAGES.blue;
+
 const isPawnColor = (color?: string | null): color is PawnColor =>
   color === 'blue' ||
   color === 'red' ||
   color === 'green' ||
   color === 'yellow';
 
-const COLOR_ACCENT: Record<PawnColor, string> = {
-  red: '#e32425',
-  green: '#0fba53',
-  yellow: '#ff8a00',
-  blue: '#1179cf',
+const normalizePawnPosition = (position?: string | number | null) =>
+  String(position ?? '').trim();
+
+const isBasePawn = (pawn: Pawn) => {
+  const position = normalizePawnPosition(pawn.currentPosition);
+  return !position || position === '0';
 };
 
-// ─── component ────────────────────────────────────────────────────────────────
-export default function RunScreen() {
+const isCenterPawn = (pawn: Pawn) =>
+  normalizePawnPosition(pawn.currentPosition) === 'finished';
+
+function positionToGrid(pos: string, color: string): [number, number] | null {
+  if (!pos || pos === '0') return null;
+
+  if (pos === 'finished') {
+    return FINISH_POSITIONS[color as PawnColor];
+  }
+
+  const homeMatch = pos.match(/home-area-(\d+)-id-(\d+)/);
+  if (homeMatch) {
+    const homeId = Number(homeMatch[2]);
+    const homeTrack = HOME_TRACK[color];
+    return homeTrack?.[homeId - 1] ?? null;
+  }
+
+  const match = pos.match(/cell-area-(\d+)-id-(\d+)/);
+  if (!match) return null;
+
+  const areaId = Number(match[1]);
+  const cellNum = Number(match[2]);
+  const track = AREA_TRACK[areaId];
+  if (!track) return null;
+
+  return track[cellNum - 1] ?? null;
+}
+
+function gridToPixel(col: number, row: number) {
+  return {
+    left: GRID_LEFT + col * TILE_W + TILE_W / 2 - PAWN_SIZE / 2,
+    top: GRID_TOP + row * TILE_H + TILE_H / 2 - PAWN_TIP,
+  };
+}
+
+// ─── MAIN COMPONENT ───
+export default function OtherBoardScreen(): ReactElement {
   const { session, user } = useAuth();
   const isFlm = user?.role?.toLowerCase() === 'flm';
   const myFlmId = isFlm ? user?.id : user?.flmId;
+
+  // ─── STATE ───
   const [boardId, setBoardId] = useState<number | null>(null);
+  const [otherBoards, setOtherBoards] = useState<OtherBoard[]>([]);
+  const [currentBoardIndex, setCurrentBoardIndex] = useState(0);
+  const [inputBoardId, setInputBoardId] = useState('');
   const [pawns, setPawns] = useState<Pawn[]>([]);
   const [players, setPlayers] = useState<Player[]>([]);
-  const [otherBoards, setOtherBoards] = useState<any[]>([]);
-  const [selectedOtherBoard, setSelectedOtherBoard] = useState<number | null>(
-    null,
-  );
   const [loading, setLoading] = useState(true);
   const [connected, setConnected] = useState(false);
   const [myDice, setMyDice] = useState<number | null>(null);
-  const [boardStatus, setBoardStatus] = useState<any[]>([]);
+  const [boardData, setBoardData] = useState<any>(null);
   const socketRef = useRef<Socket | null>(null);
-  const creatorId = 'S1101';
-  const myPlayerColor = players.find(p => p.playerId === myFlmId)?.color;
-  const [activeTab, setActiveTab] = useState<'my' | 'others'>('my');
-  const [myBoardId, setMyBoardId] = useState<number | null>(null);
+  const pawnsRef = useRef<Pawn[]>([]);
+  const [diceRows, setDiceRows] = useState<DiceByPlayerRow[]>([]);
+  const deriveTeamDice = (allPlayersDice: DiceByPlayerRow[]) => {
+    if (!Array.isArray(allPlayersDice)) return [];
 
-  const getPerspectiveArea = useCallback(
-    (area: number) => {
-      if (!myPlayerColor) return area;
+    const teamMap = new Map();
 
-      return ((area - HOME_AREA_BY_COLOR[myPlayerColor] + 4) % 4) + 1;
-    },
-    [myPlayerColor],
-  );
-
-  const getPerspectiveColor = useCallback(
-    (color?: string | null): PawnColor => {
-      if (!isPawnColor(color)) return 'blue';
-      if (!myPlayerColor) return color;
-
-      return COLOR_BY_HOME_AREA[getPerspectiveArea(HOME_AREA_BY_COLOR[color])];
-    },
-    [getPerspectiveArea, myPlayerColor],
-  );
-
-  const getPerspectivePosition = useCallback(
-    (position?: string | number | null) => {
-      const normalized = normalizePawnPosition(position);
-
-      if (!myPlayerColor) return normalized;
-
-      return normalized.replace(
-        /(cell-area-|home-area-)(\d+)(-id-\d+)/,
-        (_match, prefix, area, suffix) =>
-          `${prefix}${getPerspectiveArea(Number(area))}${suffix}`,
-      );
-    },
-    [getPerspectiveArea, myPlayerColor],
-  );
-
-  const fetchBoardStatus = async () => {
-    const res = await fetch(`${API_BASE_URL}/api/flm/boards/status`, {
-      method: 'POST',
-      headers: {
-        ...authHeaders(session?.token),
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        creatorId,
-        status: 'active',
-      }),
-    });
-
-    const json = await res.json();
-    if (json.success) {
-      setBoardStatus(json.data || []);
-    }
-  };
-  const fetchBoard = useCallback(async () => {
-    if (!myFlmId) return;
-
-    try {
-      setLoading(true);
-
-      // ACTIVE BOARD LIST
-      const activeRes = await fetch(
-        `${API_BASE_URL}/api/flm/${myFlmId}/boards/active`,
-        {
-          headers: authHeaders(session?.token),
-        },
-      );
-
-      const activeJson = await activeRes.json();
-
-      console.log('ACTIVE BOARD RESPONSE:', activeJson);
-
-      if (!activeJson.success || !activeJson.data?.length) {
-        setLoading(false);
-        return;
-      }
-
-      // FIRST ACTIVE BOARD
-      const activeBoard = activeJson.data[0];
-
-      console.log('ACTIVE BOARD:', activeBoard);
-
-      setBoardId(activeBoard.id);
-
-      // FETCH BOARD DETAILS
-      await fetchBoardState(activeBoard.id);
-
-      // FETCH BOARD STATUS
-      await fetchBoardStatus();
-    } catch (e) {
-      console.warn('fetchBoard error:', e);
-    } finally {
-      setLoading(false);
-    }
-  }, [myFlmId, session?.token]);
-
-  const fetchBoardState = async (bid: number) => {
-    try {
-      console.log('FETCHING BOARD DETAILS FOR:', bid);
-
-      const res = await fetch(`${API_BASE_URL}/api/flm/boards/navigate`, {
-        method: 'POST',
-        headers: {
-          ...authHeaders(session?.token),
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          creator: creatorId,
-          direction: 'current',
-          currentBoardId: bid,
-          excludePlayerId: null,
-        }),
-      });
-
-      const json = await res.json();
-
-      console.log('BOARD DETAILS RESPONSE:', json);
-
-      if (!json.success || !json.data) {
-        console.log('NO BOARD DATA FOUND');
-        return;
-      }
-
-      const data = json.data;
-
-      console.log('PLAYERS:', data.players);
-      console.log('PAWNS:', data.pawns);
-
-      // SET PAWNS
-      setPawns(data.pawns || []);
-
-      // SET PLAYERS
-      setPlayers(data.players || []);
-
-      // SET DICE
-      const myDiceRow = (data.diceValue || []).find(
-        (d: any) => d.playerId === myFlmId,
-      );
-
-      setMyDice(myDiceRow?.diceValue ?? null);
-    } catch (e) {
-      console.warn('fetchBoardState error:', e);
-    }
-  };
-  const sleep = (ms: number) =>
-    new Promise<void>(resolve => setTimeout(() => resolve(), ms));
-
-  const getPositionInfo = (pos: string) => {
-    const normal = pos.match(/cell-area-(\d+)-id-(\d+)/);
-
-    if (normal) {
-      return {
-        type: 'cell',
-        area: Number(normal[1]),
-        id: Number(normal[2]),
-      };
-    }
-
-    const home = pos.match(/home-area-(\d+)-id-(\d+)/);
-
-    if (home) {
-      return {
-        type: 'home',
-        area: Number(home[1]),
-        id: Number(home[2]),
-      };
-    }
-
-    return null;
-  };
-
-  type PositionInfo = NonNullable<ReturnType<typeof getPositionInfo>>;
-
-  const formatPositionInfo = (pos: PositionInfo) =>
-    pos.type === 'home'
-      ? `home-area-${pos.area}-id-${pos.id}`
-      : `cell-area-${pos.area}-id-${pos.id}`;
-
-  const getNextPositionInfo = (
-    pos: PositionInfo,
-    color: PawnColor,
-  ): PositionInfo | null => {
-    if (pos.type === 'home') {
-      return pos.id >= 6 ? null : { ...pos, id: pos.id + 1 };
-    }
-
-    const homeArea = HOME_AREA_BY_COLOR[color];
-
-    if (pos.id === 7 && pos.area !== homeArea) {
-      return {
-        type: 'cell',
-        area: pos.area,
-        id: 13,
-      };
-    }
-
-    if (pos.id === 12) {
-      if (pos.area === homeArea) {
-        return {
-          type: 'home',
-          area: homeArea,
-          id: 1,
-        };
-      }
-
-      return null;
-    }
-
-    if (pos.id >= 18) {
-      return {
-        type: 'cell',
-        area: (pos.area % 4) + 1,
-        id: 1,
-      };
-    }
-
-    return {
-      type: 'cell',
-      area: pos.area,
-      id: pos.id + 1,
-    };
-  };
-
-  const buildMovementPath = (
-    oldPos: PositionInfo | null,
-    newPos: PositionInfo | null,
-    color: PawnColor,
-  ) => {
-    if (!oldPos || !newPos) return null;
-
-    const path: string[] = [];
-    let cursor = oldPos;
-
-    for (let steps = 0; steps < 100; steps++) {
-      const next = getNextPositionInfo(cursor, color);
-
-      if (!next) return null;
-
-      path.push(formatPositionInfo(next));
+    for (const d of allPlayersDice) {
+      const teamId = d.teamId || d.playerId;
 
       if (
-        next.type === newPos.type &&
-        next.area === newPos.area &&
-        next.id === newPos.id
+        !teamMap.has(teamId) ||
+        (d.rolledAt &&
+          (!teamMap.get(teamId)?.rolledAt ||
+            new Date(d.rolledAt) > new Date(teamMap.get(teamId).rolledAt)))
       ) {
-        return path;
+        teamMap.set(teamId, {
+          ...d,
+          teamId,
+        });
       }
-
-      cursor = next;
     }
 
-    return null;
+    return Array.from(teamMap.values());
   };
+  // ─── DERIVED STATE ───
+  const currentBoard = otherBoards[currentBoardIndex];
+  const displayBoardId = currentBoard?.id || null;
 
-  const animatePawnMovement = async (oldPawn: Pawn, newPawn: Pawn) => {
-    const oldPos = getPositionInfo(oldPawn.currentPosition);
-
-    const newPos = getPositionInfo(newPawn.currentPosition);
-
-    const movementPath = buildMovementPath(
-      oldPos,
-      newPos,
-      newPawn.color as PawnColor,
-    );
-
-    // fallback
-    if (!movementPath) {
-      setPawns(prev => prev.map(p => (p.id === newPawn.id ? newPawn : p)));
-
-      return;
-    }
-
-    // different track type → jump
-    for (const currentPosition of movementPath) {
-      await sleep(300);
-
-      setPawns(prev =>
-        prev.map(p =>
-          p.id === newPawn.id
-            ? {
-                ...p,
-                currentPosition,
-                type: newPawn.type,
-                moves: newPawn.moves,
-              }
-            : p,
-        ),
-      );
-    }
-
-    // final sync
-    setPawns(prev => prev.map(p => (p.id === newPawn.id ? newPawn : p)));
-  };
-  const fetchOtherBoards = async () => {
+  // ─── FETCH OTHER BOARDS ───
+  const fetchOtherBoards = useCallback(async () => {
     try {
       const res = await fetch(`${API_BASE_URL}/api/flm/boards/status`, {
         method: 'POST',
@@ -763,34 +468,213 @@ export default function RunScreen() {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          creatorId,
+          creatorId: CREATOR_ID,
           status: 'active',
+          excludePlayerId: myFlmId,
         }),
       });
+
+      if (!res.ok) {
+        throw new Error(`HTTP error! status: ${res.status}`);
+      }
 
       const json = await res.json();
 
       if (json.success) {
-        const boards = (json.data || []).filter((b: any) => b.id !== boardId);
+        const boards = (json.data || []).filter(
+          (board: any) =>
+            !board.players?.some(
+              (p: any) => String(p.playerId) === String(myFlmId),
+            ),
+        );
 
         setOtherBoards(boards);
+
+        if (boards.length > 0) {
+          setCurrentBoardIndex(0);
+          setInputBoardId(String(boards[0].id));
+        }
       }
-    } catch (e) {
-      console.log('fetchOtherBoards error:', e);
+    } catch (error) {
+      console.error('fetchOtherBoards error:', error);
+    }
+  }, [session?.token]);
+
+  // ─── FETCH BOARD STATE ───
+  const fetchBoardState = useCallback(
+    async (bid: number) => {
+      try {
+        const res = await fetch(`${API_BASE_URL}/api/flm/boards/navigate`, {
+          method: 'POST',
+          headers: {
+            ...authHeaders(session?.token),
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            creator: CREATOR_ID,
+            direction: 'current',
+            currentBoardId: bid,
+            excludePlayerId: myFlmId,
+          }),
+        });
+
+        if (!res.ok) {
+          throw new Error(`HTTP error! status: ${res.status}`);
+        }
+
+        const json = await res.json();
+
+        if (!json.success || !json.data) {
+          console.log('No board data found');
+          return;
+        }
+
+        const data = json.data;
+
+        setPawns(data.pawns || []);
+        setPlayers(data.players || []);
+        setBoardData(json.data);
+        const updatedDice = deriveTeamDice(data.diceValue || []);
+
+        setDiceRows(updatedDice);
+        const myDiceRow = (data.diceValue || []).find(
+          (d: any) => d.playerId === myFlmId,
+        );
+
+        setMyDice(myDiceRow?.diceValue ?? null);
+      } catch (error) {
+        console.error('fetchBoardState error:', error);
+      }
+    },
+    [session?.token, myFlmId],
+  );
+  const sleep = (ms: number) =>
+    new Promise<void>(resolve => setTimeout(() => resolve(), ms));
+
+  const buildRouteForColor = (color: PawnColor): string[] => {
+    const homeAreaId = HOME_AREA_BY_COLOR[color] ?? 1;
+    const route: string[] = [];
+
+    const getNextRouteCell = (areaId: number, cellNum: number) => {
+      if (cellNum === 7 && areaId !== homeAreaId) {
+        return { areaId, cellNum: 13 };
+      }
+
+      let nextAreaId = areaId;
+      let nextCellNum = cellNum + 1;
+
+      if (nextCellNum > 18) {
+        nextCellNum = 1;
+        nextAreaId = (areaId % 4) + 1;
+      }
+
+      return { areaId: nextAreaId, cellNum: nextCellNum };
+    };
+
+    let areaId = homeAreaId;
+    let cellNum = 14;
+
+    while (true) {
+      route.push(`cell-area-${areaId}-id-${cellNum}`);
+
+      if (areaId === homeAreaId && cellNum === 12) {
+        break;
+      }
+
+      const next = getNextRouteCell(areaId, cellNum);
+      areaId = next.areaId;
+      cellNum = next.cellNum;
+
+      if (route.length > 100) {
+        break;
+      }
+    }
+
+    return route;
+  };
+
+  const MAIN_ROUTE = buildRouteForColor('red');
+  const ROUTES_BY_COLOR: Record<string, string[]> = {
+    red: MAIN_ROUTE,
+    blue: buildRouteForColor('blue'),
+    green: buildRouteForColor('green'),
+    yellow: buildRouteForColor('yellow'),
+  };
+
+  const getNextCellPosition = (currentPosition: string, color: string) => {
+    if (currentPosition === 'finished') {
+      return 'finished';
+    }
+
+    const route = ROUTES_BY_COLOR[color] || MAIN_ROUTE;
+    const currentIndex = route.indexOf(currentPosition);
+
+    if (currentIndex === -1) {
+      return currentPosition;
+    }
+
+    if (currentIndex === route.length - 1) {
+      return 'finished';
+    }
+
+    return route[currentIndex + 1];
+  };
+  const animatePawnMovement = async (
+    oldPawn: any,
+    newPawn: any,
+    movedPawnData?: any,
+  ) => {
+    try {
+      if (!movedPawnData?.steps) {
+        setPawns(prev => prev.map(p => (p.id === newPawn.id ? newPawn : p)));
+
+        return;
+      }
+
+      const steps = Number(movedPawnData.steps);
+
+      if (!steps || steps <= 0) {
+        setPawns(prev => prev.map(p => (p.id === newPawn.id ? newPawn : p)));
+
+        return;
+      }
+
+      let currentPos = oldPawn.currentPosition;
+
+      for (let i = 0; i < steps; i++) {
+        currentPos = getNextCellPosition(currentPos, oldPawn.color);
+
+        const animatedPawn = {
+          ...oldPawn,
+          currentPosition: currentPos,
+        };
+
+        setPawns(prev =>
+          prev.map(p => (p.id === animatedPawn.id ? animatedPawn : p)),
+        );
+
+        await sleep(50);
+      }
+
+      setPawns(prev => prev.map(p => (p.id === newPawn.id ? newPawn : p)));
+    } catch (err) {
+      setPawns(prev => prev.map(p => (p.id === newPawn.id ? newPawn : p)));
     }
   };
-  // ── socket ────────────────────────────────────────────────────────────────
+  // ─── INITIALIZE ───
   useEffect(() => {
-    fetchBoard();
     fetchOtherBoards();
-  }, [fetchBoard]);
-  const pawnsRef = useRef<Pawn[]>([]);
+  }, [fetchOtherBoards]);
 
   useEffect(() => {
-    pawnsRef.current = pawns;
-  }, [pawns]);
+    if (!displayBoardId) return;
+    setLoading(true);
+    fetchBoardState(displayBoardId).then(() => setLoading(false));
+  }, [displayBoardId, fetchBoardState]);
+
+  // ─── SOCKET CONNECTION ───
   useEffect(() => {
-    if (!boardId) return;
+    if (!displayBoardId) return;
 
     const socket = io(API_BASE_URL, {
       transports: ['websocket'],
@@ -802,78 +686,131 @@ export default function RunScreen() {
     socket.on('connect', () => {
       setConnected(true);
 
-      socket.emit('joinRoom', {
-        boardId,
+      console.log('🎲 Joining OtherBoard room =>', {
+        boardId: displayBoardId,
+        isSpectator: true,
+        userId: user?.id,
+        flmId: myFlmId,
+      });
+
+      console.log('SOCKET joinRoom emit =>', {
+        boardId: displayBoardId,
         isSpectator: true,
       });
+
+      socket.emit(
+        'joinRoom',
+        {
+          boardId: displayBoardId,
+          isSpectator: true,
+        },
+        (response: any) => {
+          console.log('SOCKET joinRoom callback =>', response);
+          try {
+            console.log(
+              'SOCKET joinRoom callback JSON =>',
+              JSON.stringify(response, null, 2),
+            );
+          } catch (e) {
+            console.log('SOCKET joinRoom callback JSON stringify error', e);
+          }
+        },
+      );
     });
 
     socket.on('disconnect', () => {
       setConnected(false);
     });
+    socket.on('playerStartedRolling', (data: any) => {
+      console.log('🎲 playerStartedRolling', data);
+    });
+    socket.on('diceRolled', (data: any) => {
+      console.log('🎲 diceRolled', data);
 
-    // pawn moved
+      if (data.boardId !== displayBoardId) return;
+
+      const updatedDice = deriveTeamDice(data.allPlayersDice || []);
+
+      setDiceRows(updatedDice);
+
+      if (data.updatedPlayers?.length) {
+        setPlayers(prev =>
+          prev.map(existing => {
+            const updated = data.updatedPlayers.find(
+              (p: Player) => p.playerId === existing.playerId,
+            );
+
+            return updated ? { ...existing, ...updated } : existing;
+          }),
+        );
+      }
+    });
+    socket.on('diceCleared', (data: any) => {
+      console.log('🎲 diceCleared', data);
+
+      if (data.boardId !== displayBoardId) return;
+
+      const updatedDice = deriveTeamDice(data.allPlayersDice || []);
+
+      setDiceRows(updatedDice);
+    });
+    socket.on('activePlayerJoined', (data: any) => {
+      console.log('🟣 activePlayerJoined', data);
+    });
+    socket.on('activePlayerLeft', (data: any) => {
+      console.log('🔴 activePlayerLeft', data);
+    });
     socket.on('pawnMoved', async (delta: any) => {
       const d = delta?.data;
+      if (!d || d.boardId !== displayBoardId) return;
 
-      if (!d || d.boardId !== boardId) return;
-
-      // animate pawn movement
       if (d.updatedPawns?.length) {
         for (const updatedPawn of d.updatedPawns) {
           const oldPawn = pawnsRef.current.find(p => p.id === updatedPawn.id);
 
           if (!oldPawn) continue;
 
-          await animatePawnMovement(oldPawn, updatedPawn);
+          animatePawnMovement(oldPawn, updatedPawn, d.movedPawn);
         }
       }
 
-      // update players
-      // update players
       if (d.updatedPlayers?.length) {
-        setPlayers(prev => {
-          return prev.map(existingPlayer => {
+        setPlayers(prev =>
+          prev.map(existingPlayer => {
             const updatedPlayer = d.updatedPlayers.find(
               (p: Player) => p.playerId === existingPlayer.playerId,
             );
 
-            if (!updatedPlayer) {
-              return existingPlayer;
-            }
+            if (!updatedPlayer) return existingPlayer;
 
             return {
               ...existingPlayer,
-
               moves:
                 updatedPlayer.moves !== undefined
                   ? Number(updatedPlayer.moves)
                   : existingPlayer.moves,
-
               home:
                 updatedPlayer.home !== undefined
                   ? Number(updatedPlayer.home)
                   : existingPlayer.home,
-
               currentDiceRollBalance:
                 updatedPlayer.currentDiceRollBalance !== undefined
                   ? Number(updatedPlayer.currentDiceRollBalance)
                   : existingPlayer.currentDiceRollBalance,
-
               rank: updatedPlayer.rank ?? existingPlayer.rank,
-
               winPosition:
                 updatedPlayer.winPosition ?? existingPlayer.winPosition,
             };
-          });
-        });
+          }),
+        );
       }
 
-      // update dice
       if (d.updatedDice?.length) {
-        const myRow = d.updatedDice.find(
-          (r: any) => r.playerId === (isFlm ? myFlmId : user?.id),
-        );
+        const updatedDice = deriveTeamDice(d.updatedDice);
+
+        setDiceRows(updatedDice);
+
+        const myRow = updatedDice.find((r: any) => r.playerId === myFlmId);
 
         if (myRow !== undefined) {
           setMyDice(myRow?.diceValue ?? null);
@@ -881,57 +818,80 @@ export default function RunScreen() {
       }
     });
 
-    // upload approved
     socket.on('uploadStatusChanged', () => {
-      if (boardId) {
-        fetchBoardState(boardId);
-      }
+      fetchBoardState(displayBoardId);
     });
 
     return () => {
-      socket.emit('leaveRoom', { boardId });
+      socket.emit('leaveRoom', {
+        boardId: displayBoardId,
+      });
 
       socket.disconnect();
 
       socketRef.current = null;
     };
-  }, [boardId]);
+  }, [displayBoardId, fetchBoardState, myFlmId]);
 
-  const getPlayerTeamLogo = (player: Player) => {
-    const board = boardStatus.find(b => String(b.id) === String(boardId));
+  useEffect(() => {
+    pawnsRef.current = pawns;
+  }, [pawns]);
 
-    const matchedPlayer = board?.players?.find(
-      (p: any) => p.playerId === player.playerId,
-    );
-
-    return getTeamLogo(matchedPlayer?.teamName);
+  // ─── NAVIGATION HANDLERS ───
+  const handlePrevBoard = () => {
+    if (otherBoards.length === 0) return;
+    const newIndex =
+      currentBoardIndex <= 0 ? otherBoards.length - 1 : currentBoardIndex - 1;
+    const board = otherBoards[newIndex];
+    setCurrentBoardIndex(newIndex);
+    setBoardId(board.id);
+    setInputBoardId(String(board.id));
   };
 
-  // ── render pawn on board ──────────────────────────────────────────────────
-  const renderBoardPawns = (): React.ReactElement[] => {
-    // group pawns at same position
+  const handleNextBoard = () => {
+    if (otherBoards.length === 0) return;
+    const newIndex =
+      currentBoardIndex >= otherBoards.length - 1 ? 0 : currentBoardIndex + 1;
+    const board = otherBoards[newIndex];
+    setCurrentBoardIndex(newIndex);
+    setBoardId(board.id);
+    setInputBoardId(String(board.id));
+  };
+
+  const handleGoToBoard = () => {
+    const bid = Number(inputBoardId);
+    if (isNaN(bid) || bid <= 0) return;
+    setBoardId(bid);
+  };
+
+  // ─── RENDER BOARD PAWNS ───
+  const renderBoardPawns = (): ReactElement[] => {
     const posMap = new Map<string, Pawn[]>();
+
     pawns.forEach(pawn => {
       if (isBasePawn(pawn)) return;
-      const perspectiveColor = getPerspectiveColor(pawn.color);
+
       const grid = positionToGrid(
-        isCenterPawn(pawn)
-          ? 'finished'
-          : getPerspectivePosition(pawn.currentPosition),
-        perspectiveColor,
+        isCenterPawn(pawn) ? 'finished' : pawn.currentPosition,
+        pawn.color,
       );
       if (!grid) return;
+
       const key = `${grid[0]},${grid[1]}`;
       if (!posMap.has(key)) posMap.set(key, []);
       posMap.get(key)!.push(pawn);
     });
+
     const elements: JSX.Element[] = [];
+
     posMap.forEach((group, key) => {
       const [col, row] = key.split(',').map(Number);
       const pixel = gridToPixel(col, row);
+
       group.forEach((pawn, i) => {
         const offset =
           group.length > 1 ? (i - (group.length - 1) / 2) * s(5) : 0;
+
         elements.push(
           <View
             key={pawn.id}
@@ -942,7 +902,7 @@ export default function RunScreen() {
           >
             <View style={styles.pawnBackplate}>
               <Image
-                source={getPawnImage(getPerspectiveColor(pawn.color))}
+                source={getPawnImage(pawn.color)}
                 style={styles.boardPawnImage}
               />
             </View>
@@ -950,19 +910,131 @@ export default function RunScreen() {
         );
       });
     });
+
     return elements;
   };
 
-  // ── render base pawns in home corners ────────────────────────────────────
-  const renderBasePawns = (): React.ReactElement[] => {
+  const renderTeamCard = (
+    player: Player | undefined,
+    positionStyle: any,
+    reverse?: boolean,
+  ) => {
+    if (!player) return null;
+
+    const diceRow =
+      [...diceRows]
+        .reverse()
+        .find(
+          (r: DiceByPlayerRow) =>
+            String(r.playerId) === String(player.playerId) &&
+            r.diceValue != null,
+        ) || null;
+
+    const diceValue =
+      diceRow?.diceValue == null ? null : Number(diceRow.diceValue);
+
+    const logo = getTeamLogo(player.teamName);
+
+    const lastMovedAt = player.lastMovedAt ?? null;
+
+    return (
+      <View style={[styles.diceboard, positionStyle]}>
+        {reverse && (
+          <View
+            style={{
+              right: s(8),
+              alignSelf: 'center',
+              width: '24%',
+              alignItems: 'center',
+              flexDirection: 'row',
+              justifyContent: 'space-between',
+              gap: s(29),
+            }}
+          >
+            <Text style={styles.lastMovedText}>
+              {lastMovedAt
+                ? new Date(lastMovedAt).toLocaleDateString('en-GB', {
+                    day: '2-digit',
+                    month: 'short',
+                    hour: '2-digit',
+                    minute: '2-digit',
+                    second: '2-digit',
+                  })
+                : '—'}
+            </Text>
+
+            {(() => {
+              const DiceComponent = DICE_IMAGE_BY_VALUE[diceValue == null ? 1 : diceValue];
+
+              return <DiceComponent width={s(28)} height={s(28)} />;
+            })()}
+
+            {logo ? (
+              <Image
+                source={logo}
+                style={styles.teamLogoImg}
+                resizeMode="contain"
+              />
+            ) : null}
+          </View>
+        )}
+
+        {!reverse && (
+          <View
+            style={{
+              left: s(0),
+              alignSelf: 'center',
+              width: '24%',
+              alignItems: 'center',
+              flexDirection: 'row',
+              justifyContent: 'space-between',
+              gap: s(29),
+            }}
+          >
+            {logo ? (
+              <Image
+                source={logo}
+                style={styles.teamLogoImg}
+                resizeMode="contain"
+              />
+            ) : null}
+
+            {DICE_IMAGE_BY_VALUE[diceValue || 1] ? (
+              (() => {
+                const DiceComponent = DICE_IMAGE_BY_VALUE[diceValue || 1];
+
+                return <DiceComponent width={s(28)} height={s(28)} />;
+              })()
+            ) : (
+              <Text style={styles.fallbackDiceText}>No Dice</Text>
+            )}
+
+            <Text style={styles.lastMovedText}>
+              {lastMovedAt
+                ? new Date(lastMovedAt).toLocaleDateString('en-GB', {
+                    day: '2-digit',
+                    month: 'short',
+                    hour: '2-digit',
+                    minute: '2-digit',
+                    second: '2-digit',
+                  })
+                : '—'}
+            </Text>
+          </View>
+        )}
+      </View>
+    );
+  };
+  // ─── RENDER BASE PAWNS ───
+  const renderBasePawns = (): ReactElement[] => {
     const elements: React.ReactElement[] = [];
     const basePawnsByColor: Record<string, Pawn[]> = {};
+
     pawns.filter(isBasePawn).forEach(p => {
-      const perspectiveColor = getPerspectiveColor(p.color);
-      if (!basePawnsByColor[perspectiveColor]) {
-        basePawnsByColor[perspectiveColor] = [];
+      if (!basePawnsByColor[p.color]) {
+        basePawnsByColor[p.color] = [];
       }
-      basePawnsByColor[perspectiveColor].push(p);
+      basePawnsByColor[p.color].push(p);
     });
 
     Object.entries(basePawnsByColor).forEach(([color, colorPawns]) => {
@@ -970,6 +1042,7 @@ export default function RunScreen() {
       colorPawns.forEach((pawn, i) => {
         const pos = positions[i];
         if (!pos) return;
+
         const pixel = gridToPixel(pos[0], pos[1]);
 
         elements.push(
@@ -991,8 +1064,7 @@ export default function RunScreen() {
     return elements;
   };
 
-  const myPlayer = players.find(p => p.playerId === myFlmId);
-
+  // ─── LOADING STATE ───
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
@@ -1002,103 +1074,51 @@ export default function RunScreen() {
     );
   }
 
-  if (!boardId) {
+  if (!displayBoardId) {
     return (
       <View style={styles.loadingContainer}>
         <Icon name="sports-esports" size={s(48)} color="#8e35ff" />
-        <Text style={styles.loadingText}>No active board found</Text>
+        <Text style={styles.loadingText}>No boards available</Text>
       </View>
     );
   }
+
+  // ─── RENDER ───
   return (
     <SafeAreaView style={styles.container}>
-      {/* Header */}
-      <View style={styles.topSwitcher}>
-        <TouchableOpacity
-          style={[
-            styles.switchTab,
-            activeTab === 'my' && styles.activeSwitchTab,
-          ]}
-          onPress={() => setActiveTab('my')}
-        >
-          <Text
-            style={[
-              styles.switchText,
-              activeTab === 'my' && styles.activeSwitchText,
-            ]}
-          >
-            My Board
-          </Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={[
-            styles.switchTab,
-            activeTab === 'others' && styles.activeSwitchTab,
-          ]}
-          onPress={() => setActiveTab('others')}
-        >
-          <Text
-            style={[
-              styles.switchText,
-              activeTab === 'others' && styles.activeSwitchText,
-            ]}
-          >
-            Other Boards
-          </Text>
-        </TouchableOpacity>
-      </View>
-      {activeTab === 'others' && (
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={styles.scrollContainer}
+      >
+        {/* BOARD SELECTOR */}
         <View style={styles.boardSelectorRow}>
-          {/* Previous */}
           <TouchableOpacity
             style={styles.circleBtn}
-            onPress={() => {
-              if (!otherBoards.length) return;
-
-              const currentIndex = otherBoards.findIndex(
-                b => b.id === selectedOtherBoard,
-              );
-
-              const prev =
-                currentIndex <= 0
-                  ? otherBoards[otherBoards.length - 1]
-                  : otherBoards[currentIndex - 1];
-
-              setSelectedOtherBoard(prev.id);
-              setBoardId(prev.id);
-
-              fetchBoardState(prev.id);
-            }}
+            onPress={handlePrevBoard}
+            disabled={otherBoards.length === 0}
           >
             <Icon name="chevron-left" size={22} color="#fff" />
           </TouchableOpacity>
 
-          <Text style={styles.boardLabel}>Board -</Text>
+          <Text style={styles.boardLabel}>Board ID</Text>
 
           <TextInput
-            value={String(selectedOtherBoard || '')}
-            placeholder="Board ID"
+            value={inputBoardId}
+            placeholder="Enter Board ID"
             placeholderTextColor="#777"
             keyboardType="numeric"
             style={styles.boardInput}
-            onChangeText={txt => setSelectedOtherBoard(Number(txt))}
+            onChangeText={setInputBoardId}
           />
 
           <TouchableOpacity
             style={styles.goBtn}
-            onPress={() => {
-              if (!selectedOtherBoard) return;
-
-              setBoardId(selectedOtherBoard);
-
-              fetchBoardState(selectedOtherBoard);
-            }}
+            onPress={handleGoToBoard}
+            disabled={!inputBoardId}
           >
             <Text style={styles.goBtnText}>Go</Text>
           </TouchableOpacity>
 
-          {/* Refresh */}
           <TouchableOpacity
             style={styles.refreshBtn}
             onPress={fetchOtherBoards}
@@ -1106,341 +1126,304 @@ export default function RunScreen() {
             <Icon name="refresh" size={20} color="#222" />
           </TouchableOpacity>
 
-          {/* Next */}
           <TouchableOpacity
             style={styles.circleBtn}
-            onPress={() => {
-              if (!otherBoards.length) return;
-
-              const currentIndex = otherBoards.findIndex(
-                b => b.id === selectedOtherBoard,
-              );
-
-              const next =
-                currentIndex >= otherBoards.length - 1
-                  ? otherBoards[0]
-                  : otherBoards[currentIndex + 1];
-
-              setSelectedOtherBoard(next.id);
-              setBoardId(next.id);
-
-              fetchBoardState(next.id);
-            }}
+            onPress={handleNextBoard}
+            disabled={otherBoards.length === 0}
           >
             <Icon name="chevron-right" size={22} color="#fff" />
           </TouchableOpacity>
         </View>
-      )}
-      <View style={styles.teamsContainer}>
-  {players.map((player, index) => {
-    const perspectiveColor = getPerspectiveColor(player.color);
 
-    return (
-      <View
-        key={player.playerId}
-        style={[
-          styles.teamCard,
-          player.playerId === myFlmId && styles.activeTeamCard,
-        ]}
-      >
-        {/* Top Number */}
-        <View style={styles.teamNumberCircle}>
-          <Text style={styles.teamNumberText}>
-            {index + 1}
-          </Text>
-        </View>
+        {/* TEAMS GRID */}
+        <View style={styles.teamsContainer}>
+          {players.map((player, index) => {
+            const diceRow =
+              [...diceRows]
+                .reverse()
+                .find(
+                  r =>
+                    String(r.playerId) === String(player.playerId) &&
+                    r.diceValue != null,
+                ) || null;
 
-        {/* Team Name */}
-        <Text style={styles.teamTitle} numberOfLines={2}>
-          {player.teamName || player.playerName}
-        </Text>
+            const playerDice =
+              diceRow?.diceValue == null ? null : Number(diceRow.diceValue);
+            const lastMovedAt = player.lastMovedAt ?? null;
+            const rolledAt = diceRow?.rolledAt
+              ? new Date(diceRow.rolledAt).toLocaleString('en-GB', {
+                  day: '2-digit',
+                  month: 'short',
+                  hour: '2-digit',
+                  minute: '2-digit',
+                })
+              : '--';
+            const diceIcon =
+              player.color === 'red'
+                ? require('../assets/gameAssets/dice-red.png')
+                : player.color === 'green'
+                ? require('../assets/gameAssets/dice-green.png')
+                : player.color === 'yellow'
+                ? require('../assets/gameAssets/dice-yellow.png')
+                : require('../assets/gameAssets/dice-blue.png');
+            return (
+              <View key={player.playerId} style={styles.teamCard}>
+                <View style={styles.teamNumberCircle}>
+                  <Text style={styles.teamNumberText}>{player.rank}</Text>
+                </View>
 
-        {/* Bottom Stats */}
-        <View style={styles.teamBottom}>
-          <View style={styles.teamStat}>
-            <Image
-              source={require('../assets/gameAssets/moves.png')}
-              style={styles.crossIcon}
-            />
-            <Text style={styles.teamStatText}>
-              {player.moves}
-            </Text>
-          </View>
+                {/* TOP */}
 
-          <View style={styles.teamStat}>
-            <Image
-              source={getPawnImage(perspectiveColor)}
-              style={styles.teamPawn}
-            />
-            <Text style={styles.teamStatText}>
-              {player.home}
-            </Text>
-          </View>
-        </View>
+                <View style={styles.compactStatsContainer}>
+                  {/* TOP ROW */}
+                  <View style={styles.compactRow}>
+                    <Text style={styles.teamTitle} numberOfLines={2}>
+                      {(player.teamName || player.playerName).replace(
+                        /([a-z])([A-Z])/g,
+                        '$1\n$2',
+                      )}
+                    </Text>
+                    <View style={styles.compactItem}>
+                      <Image
+                        source={require('../assets/gameAssets/move-gain.png')}
+                        style={styles.compactIcon}
+                      />
+                      <Text style={styles.compactText}>{player.moves}</Text>
+                    </View>
 
-        {/* YOU TAG */}
-        {player.playerId === myFlmId && (
-          <View style={styles.youMiniTag}>
-            <Text style={styles.youMiniText}>
-              You
-            </Text>
-          </View>
-        )}
-      </View>
-    );
-  })}
-</View>
+                    <View style={styles.compactItem}>
+                      <Image
+                        source={require('../assets/gameAssets/moves.png')}
+                        style={styles.compactIcon}
+                      />
+                      <Text style={styles.compactText}>{player.moves}</Text>
+                    </View>
+                  </View>
 
-      {/* Board */}
-      <View style={styles.boardArea}>
-        <Image
-          source={require('../assets/gameAssets/ludo-board.png')}
-          style={styles.boardImage}
-        />
+                  {/* BOTTOM ROW */}
+                  <View style={styles.compactRow}>
+                    <View style={styles.compactItem}>
+                      <Image
+                        source={require('../assets/gameAssets/kill.png')}
+                        style={styles.compactIcon}
+                      />
+                      <Text style={styles.compactText}>{player.kills}</Text>
+                    </View>
 
-        {/* Player cards in corners */}
-        {players.map(player => {
-          const colorNumberMap: Record<PawnColor, number> = {
-            blue: 1,
-            red: 2,
-            green: 3,
-            yellow: 4,
-          };
-          const perspectiveColor = getPerspectiveColor(player.color);
+                    <View style={styles.compactItem}>
+                      <Image
+                        source={require('../assets/gameAssets/heart.png')}
+                        style={styles.compactIcon}
+                      />
+                      <Text style={styles.compactText}>{player.hearts}</Text>
+                    </View>
 
-          return (
-            <React.Fragment key={player.playerId}>
-              <View>
-                <View
-                  style={[
-                    styles.playerBadge,
-                    { backgroundColor: COLOR_ACCENT[perspectiveColor] },
-                  ]}
-                >
-                  <Text style={styles.playerBadgeText}>
-                    {colorNumberMap[perspectiveColor]}
-                  </Text>
+                    <View style={[styles.compactItem, { left: s(18) }]}>
+                      <Image
+                        source={require('../assets/gameAssets/move-loss.png')}
+                        style={styles.compactIcon}
+                      />
+                      <Text style={styles.compactText}>{player.movesLost}</Text>
+                    </View>
+                    <View style={[styles.compactItem, { left: s(20) }]}>
+                      <Image source={diceIcon} style={styles.compactIcon} />
+                      <Text style={styles.compactText}>
+                        {player.currentDiceRollBalance}
+                      </Text>
+                    </View>
+                  </View>
                 </View>
               </View>
-            </React.Fragment>
-          );
-        })}
-
-        {/* Pawns on board */}
-        <View pointerEvents="none" style={styles.pawnLayer}>
-          {/* {renderDebugGrid()} */}
-          {renderBasePawns()}
-          {renderBoardPawns()}
+            );
+          })}
         </View>
-        <View style={styles.logicLayer}>
-          {/* Green */}
-          <Text style={[styles.logicText, { top: '3.2%', left: '47.5%' }]}>
-            -6
-          </Text>
-          <Text style={[styles.logicText, { top: '22%', left: '41%' }]}>
-            -1
-          </Text>
-          <Text style={[styles.logicText, { top: '34.5%', left: '53.5%' }]}>
-            -3
-          </Text>
-          {/* Red */}
-          <Text style={[styles.logicText, { top: '47%', left: '3.5%' }]}>
-            -6
-          </Text>
-          <Text style={[styles.logicText, { top: '40.7%', left: '34.7%' }]}>
-            -3
-          </Text>
-          <Text style={[styles.logicText, { top: '53.5%', left: '22.5%' }]}>
-            -1
-          </Text>
+        <View style={styles.dice}>
+          {renderTeamCard(
+            players.find(p => p.color === 'red'),
+            {
+              left: s(-2),
+              borderBottomEndRadius: s(0),
+              borderBottomStartRadius: s(0),
+            },
+            false,
+          )}
 
-          {/* Yellow */}
-          <Text style={[styles.logicText, { top: '47.3%', left: '91.5%' }]}>
-            -6
-          </Text>
-          <Text style={[styles.logicText, { top: '53.3%', left: '60.2%' }]}>
-            -3
-          </Text>
-          <Text style={[styles.logicText, { top: '40.7%', left: '72.4%' }]}>
-            -1
-          </Text>
-
-          {/* BLUE */}
-          <Text style={[styles.logicText, { top: '91%', left: '47.5%' }]}>
-            -6
-          </Text>
-          <Text style={[styles.logicText, { top: '59.7%', left: '41.2%' }]}>
-            -3
-          </Text>
-          <Text style={[styles.logicText, { top: '72.3%', left: '53.7%' }]}>
-            -1
-          </Text>
+          {renderTeamCard(
+            players.find(p => p.color === 'green'),
+            {
+              right: s(-2),
+              borderBottomEndRadius: s(0),
+              borderBottomStartRadius: s(0),
+            },
+            true,
+          )}
         </View>
-        {/* My badge */}
-        {myPlayer && (
-          <View style={styles.youBadge}>
-            <Text style={styles.youText}>You</Text>
-            <Image
-              source={require('../assets/gameAssets/moves.png')}
-              style={styles.statIcon}
-            />
-            <Text style={styles.youText}>{myPlayer.moves}</Text>
-            {myDice != null && <Text style={styles.youText}>🎲{myDice}</Text>}
+
+        {/* BOARD AREA */}
+        <View style={styles.boardArea}>
+          <Image
+            source={require('../assets/gameAssets/ludo-board.png')}
+            style={styles.boardImage}
+          />
+          {/* PAWNS LAYER */}
+          <View pointerEvents="none" style={styles.pawnLayer}>
+            {renderBasePawns()}
+            {renderBoardPawns()}
           </View>
-        )}
-      </View>
-      <View style={styles.bottomPanel}>
-  
-  {/* LEFT */}
-  <View style={styles.bottomPlayerBox}>
-    <Image
-      source={require('../assets/icons/team.png')}
-      style={styles.bottomLogo}
-    />
+          {players.map(player => {
+            const positionStyle =
+              player.color === 'red'
+                ? styles.redName
+                : player.color === 'green'
+                ? styles.greenName
+                : player.color === 'yellow'
+                ? styles.yellowName
+                : styles.blueName;
 
-    <Text style={styles.bottomPlayerText}>
-      Player Waiting
-    </Text>
+            return (
+              <View
+                key={player.playerId}
+                style={[styles.baseNameContainer, positionStyle]}
+              >
+                <Text style={styles.teamName}>{player.playerName}</Text>
+              </View>
+            );
+          })}
+        </View>
+        <View style={[styles.dice2]}>
+          {renderTeamCard(
+            players.find(p => p.color === 'blue'),
+            {
+              left: s(-2),
+              borderBottomEndRadius: s(6),
+              borderBottomStartRadius: s(6),
+              borderTopEndRadius: s(0),
+              borderTopStartRadius: s(0),
+            },
+            false,
+          )}
 
-    <View style={styles.bottomStats}>
-      <Text style={styles.bottomStat}>
-        No upcoming
-      </Text>
-    </View>
-  </View>
+          {renderTeamCard(
+            players.find(p => p.color === 'yellow'),
+            {
+              right: s(-2),
+              borderBottomEndRadius: s(6),
+              borderBottomStartRadius: s(6),
+              borderTopEndRadius: s(0),
+              borderTopStartRadius: s(0),
+            },
+            true,
+          )}
+        </View>
+        <View
+          style={{
+            position: 'relative',
+            left: s(10),
+            bottom: s(0),
+          }}
+        >
+          <Text style={{ color: 'white' }}>
+            Starting date:
+            {boardData?.startTime
+              ? new Date(boardData.startTime).toLocaleString('en-GB', {
+                  day: '2-digit',
+                  month: 'short',
+                  hour: '2-digit',
+                  minute: '2-digit',
+                  second: '2-digit',
+                })
+              : '--'}
+          </Text>
 
-  {/* CENTER */}
-  <View style={styles.bottomDice}>
-    <Text style={styles.bottomDiceText}>
-      No{"\n"}dice
-    </Text>
-  </View>
-
-  {/* RIGHT */}
-  <View style={styles.bottomPlayerBox}>
-    <Image
-      source={require('../assets/icons/team.png')}
-      style={styles.bottomLogo}
-    />
-
-    <Text style={styles.bottomPlayerText}>
-      Akash
-    </Text>
-
-    <View style={styles.bottomStats}>
-      <Text style={styles.bottomStat}>
-        No upcoming
-      </Text>
-    </View>
-  </View>
-</View>
-
-{/* FLOATING BUTTON */}
-<TouchableOpacity style={styles.chatButton}>
-  <Icon name="forum" size={24} color="#fff" />
-</TouchableOpacity>
-
-{/* BOTTOM NAV
-<View style={styles.bottomNav}>
-  <Icon name="home" size={24} color="#fff" />
-  <Icon name="casino" size={24} color="#fff" />
-  <Icon name="emoji-events" size={24} color="#fff" />
-  <Icon name="cloud-upload" size={24} color="#fff" />
-  <Icon name="thumb-up" size={24} color="#fff" />
-  <Icon name="notifications" size={24} color="#fff" />
-</View> */}
+          <Text style={{ color: 'white' }}>
+            Ending date:
+            {boardData?.endTime
+              ? new Date(boardData.endTime).toLocaleString('en-GB', {
+                  day: '2-digit',
+                  month: 'short',
+                  hour: '2-digit',
+                  minute: '2-digit',
+                  second: '2-digit',
+                })
+              : '--'}
+          </Text>
+        </View>
+      </ScrollView>
     </SafeAreaView>
   );
 }
 
+// ─── STYLES ───
 const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#000',
   },
-  bottomPanel: {
-  flexDirection: 'row',
-  justifyContent: 'space-between',
-  alignItems: 'center',
-  backgroundColor: '#101010',
-  marginHorizontal: s(5),
-  paddingHorizontal: s(10),
-  paddingVertical: s(8),
-},
+  baseNameContainer: {
+    position: 'absolute',
+    zIndex: 100,
+  },
 
-bottomPlayerBox: {
-  width: '30%',
-  alignItems: 'center',
-},
+  teamName: {
+    color: '#fff',
+    fontSize: s(11),
+    fontWeight: '800',
+  },
 
-bottomLogo: {
-  width: s(34),
-  height: s(34),
-  resizeMode: 'contain',
-},
+  redName: {
+    top: s(18),
+    left: s(18),
+  },
 
-bottomPlayerText: {
-  color: '#ccc',
-  fontSize: s(10),
-  textAlign: 'center',
-  marginTop: s(4),
-  fontWeight: '600',
-},
+  greenName: {
+    top: s(18),
+    right: s(18),
+  },
 
-bottomStats: {
-  marginTop: s(4),
-},
+  blueName: {
+    bottom: s(18),
+    left: s(18),
+  },
 
-bottomStat: {
-  color: '#999',
-  fontWeight: '600',
-  fontSize: s(9),
-},
+  yellowName: {
+    bottom: s(18),
+    right: s(18),
+  },
+  scrollContainer: {
+    paddingBottom: s(40),
+  },
+  compactStatsContainer: {
+    // marginTop: s(6),
+  },
 
-bottomDice: {
-  width: s(56),
-  height: s(56),
-  borderRadius: s(8),
-  backgroundColor: '#2a2a2a',
-  justifyContent: 'center',
-  alignItems: 'center',
-  borderWidth: 1,
-  borderColor: '#444',
-},
+  compactRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    // marginTop: s(4),
+    flexWrap: 'wrap',
+    width: '100%',
+  },
 
-bottomDiceText: {
-  color: '#777',
-  fontWeight: '700',
-  textAlign: 'center',
-  fontSize: s(10),
-},
+  compactItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    // marginRight: s(4),
+    paddingLeft: s(2),
+    gap: s(2),
+  },
 
-chatButton: {
-  position: 'absolute',
-  right: s(16),
-  bottom: s(76),
-  width: s(58),
-  height: s(58),
-  borderRadius: s(29),
-  backgroundColor: '#8c32ff',
-  justifyContent: 'center',
-  alignItems: 'center',
-  borderWidth: 2,
-  borderColor: '#fff',
-  elevation: 10,
-},
+  compactIcon: {
+    width: s(20),
+    height: s(20),
+    resizeMode: 'contain',
+    // marginRight: s(3),
+  },
 
-bottomNav: {
-  position: 'absolute',
-  left: 0,
-  right: 0,
-  bottom: 0,
-  height: s(62),
-  backgroundColor: '#9b5cff',
-  flexDirection: 'row',
-  justifyContent: 'space-around',
-  alignItems: 'center',
-},
+  compactText: {
+    color: '#000',
+    fontSize: s(11),
+    fontWeight: '800',
+  },
   loadingContainer: {
     flex: 1,
     backgroundColor: '#000',
@@ -1448,33 +1431,166 @@ bottomNav: {
     alignItems: 'center',
     gap: s(12),
   },
-  loadingText: { color: '#FFF', fontSize: s(14), fontWeight: '600' },
-  logicLayer: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    zIndex: 9999,
-    elevation: 9999,
-    pointerEvents: 'none',
-    height: '100%',
-    width: '100%',
+
+  loadingText: {
+    color: '#FFF',
+    fontSize: s(14),
+    fontWeight: '600',
+  },
+  boardSelectorRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    // marginTop: s(10),
+    marginBottom: s(2),
+    gap: s(10),
+    // paddingHorizontal: s(8),
   },
 
-  logicText: {
-    position: 'absolute',
-    color: 'red',
-    fontSize: s(16),
-    fontWeight: '500',
-    paddingHorizontal: s(4),
-    paddingVertical: s(1),
-    borderRadius: s(2),
-    borderWidth: 1,
-    borderColor: '#fff',
-    zIndex: 99999,
-    elevation: 99999,
+  circleBtn: {
+    width: s(36),
+    height: s(36),
+    borderRadius: s(18),
+    backgroundColor: '#00087bd3',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
+
+  boardLabel: {
+    color: '#fff',
+    fontWeight: '700',
+    fontSize: s(14),
+  },
+
+  boardInput: {
+    width: s(80),
+    height: s(34),
+    backgroundColor: '#dbdbdb',
+    borderRadius: s(6),
+    paddingHorizontal: s(10),
+    color: '#000',
+    fontWeight: '700',
+    fontSize: s(12),
+  },
+
+  goBtn: {
+    height: s(34),
+    paddingHorizontal: s(14),
+    backgroundColor: '#f0f0f0',
+    borderRadius: s(6),
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+
+  goBtnText: {
+    color: '#111',
+    fontWeight: '700',
+    fontSize: s(12),
+  },
+  teamTopRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+  },
+  diceBox: {
+    width: s(16),
+    height: s(16),
+    borderRadius: s(6),
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+
+  diceText: {
+    color: '#000000',
+    fontWeight: '900',
+    fontSize: s(13),
+  },
+  teamCard: {
+    width: '48%',
+    backgroundColor: '#e1e1e1',
+    borderRadius: s(10),
+    borderWidth: 3,
+    borderColor: '#979797',
+    paddingHorizontal: s(10),
+    paddingTop: s(14),
+    paddingBottom: s(10),
+    minHeight: s(40),
+  },
+  refreshBtn: {
+    width: s(34),
+    height: s(34),
+    borderRadius: s(17),
+    backgroundColor: '#f0f0f0',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+
+  teamsContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+    marginHorizontal: s(10),
+    marginTop: s(10),
+    marginBottom: s(8),
+    gap: s(8),
+  },
+
+  teamNumberCircle: {
+    position: 'absolute',
+    top: -10,
+    alignSelf: 'center',
+    width: s(22),
+    height: s(22),
+    borderRadius: s(11),
+    backgroundColor: '#f2b000',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 10,
+  },
+
+  teamNumberText: {
+    color: '#000',
+    fontWeight: '900',
+    fontSize: s(11),
+  },
+
+  teamTitle: {
+    color: '#000',
+    fontSize: s(13),
+    fontWeight: '800',
+    textAlign: 'left',
+    width: '50%',
+  },
+  teamBottom: {
+    marginTop: s(8),
+  },
+
+  teamStat: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+
+  crossIcon: {
+    width: s(16),
+    height: s(16),
+    resizeMode: 'contain',
+    marginRight: s(3),
+    tintColor: '#ff4444',
+  },
+
+  teamPawn: {
+    width: s(16),
+    height: s(16),
+    resizeMode: 'contain',
+    marginRight: s(3),
+  },
+
+  teamStatText: {
+    color: '#000000',
+    fontWeight: '700',
+    fontSize: s(12),
+  },
+
   boardArea: {
     width: BOARD_SIZE,
     height: BOARD_SIZE,
@@ -1487,6 +1603,7 @@ bottomNav: {
     borderWidth: 1,
     borderColor: '#333',
   },
+
   boardImage: {
     ...StyleSheet.absoluteFill,
     width: '100%',
@@ -1494,11 +1611,13 @@ bottomNav: {
     resizeMode: 'stretch',
     zIndex: 0,
   },
+
   pawnLayer: {
     ...StyleSheet.absoluteFill,
     zIndex: 30,
     elevation: 50,
   },
+
   playerBadge: {
     position: 'absolute',
     left: s(-9),
@@ -1509,30 +1628,17 @@ bottomNav: {
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.9)',
+    borderColor: 'rgba(0, 0, 0, 0.9)',
     zIndex: 7,
     elevation: 7,
   },
-  playerBadgeText: { color: 'white', fontSize: s(10), fontWeight: '900' },
-  statRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: s(3),
-    height: s(15),
-  },
-  statText: {
-    color: '#2b2b2b',
+
+  playerBadgeText: {
+    color: 'white',
     fontSize: s(10),
-    fontWeight: '800',
-    marginRight: s(4),
+    fontWeight: '900',
   },
-  statIcon: { width: s(12), height: s(12), resizeMode: 'contain' },
-  boardTeamLogo: {
-    width: BOARD_SIZE * 0.18,
-    height: BOARD_SIZE * 0.115,
-    resizeMode: 'contain',
-  },
+
   boardPawn: {
     position: 'absolute',
     width: PAWN_SIZE,
@@ -1542,6 +1648,7 @@ bottomNav: {
     zIndex: 51,
     elevation: 51,
   },
+
   pawnBackplate: {
     width: '100%',
     height: '100%',
@@ -1554,208 +1661,141 @@ bottomNav: {
     shadowOffset: { width: 0, height: s(2) },
     elevation: 52,
   },
-  boardPawnImage: { width: '100%', height: '100%', resizeMode: 'contain' },
-  youBadge: {
-    position: 'absolute',
-    left: BOARD_SIZE * 0.12,
-    bottom: s(6),
-    height: s(22),
-    borderRadius: s(10),
-    backgroundColor: '#0069ba',
+
+  boardPawnImage: {
+    width: '100%',
+    height: '100%',
+    resizeMode: 'contain',
+  },
+
+  bottomPanel: {
     flexDirection: 'row',
+    justifyContent: 'space-between',
     alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: s(8),
-    gap: s(6),
-    zIndex: 7,
-  },
-  youText: { color: 'white', fontSize: s(12), fontWeight: '800' },
-  topSwitcher: {
-    flexDirection: 'row',
-    backgroundColor: '#f1f1f1',
-    marginHorizontal: s(14),
-    marginTop: s(10),
-    borderRadius: s(22),
-    padding: s(4),
-    borderWidth: 1,
-    borderColor: '#333',
-  },
-
-  switchTab: {
-    flex: 1,
-    height: s(32),
-    borderRadius: s(18),
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-
-  activeSwitchTab: {
-    backgroundColor: '#004c97',
-  },
-
-  switchText: {
-    color: '#888',
-    fontWeight: '700',
-    fontSize: s(13),
-  },
-
-  activeSwitchText: {
-    color: '#fff',
-  },
-
-  boardSelectorRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: s(10),
-    marginBottom: s(8),
-    gap: s(6),
-  },
-
-  circleBtn: {
-    width: s(36),
-    height: s(36),
-    borderRadius: s(18),
-    backgroundColor: '#1976ff',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-
-  boardLabel: {
-    color: '#fff',
-    fontWeight: '700',
-    fontSize: s(13),
-  },
-
-  boardInput: {
-    width: s(70),
-    height: s(34),
-    backgroundColor: '#fff',
-    borderRadius: s(6),
+    backgroundColor: '#101010',
+    marginHorizontal: s(5),
     paddingHorizontal: s(10),
-    color: '#000',
-    fontWeight: '700',
+    paddingVertical: s(8),
+    minHeight: s(80),
   },
 
-  goBtn: {
-    height: s(34),
-    paddingHorizontal: s(14),
-    backgroundColor: '#d9d9d9',
-    borderRadius: s(6),
-    justifyContent: 'center',
+  bottomPlayerBox: {
+    width: '30%',
     alignItems: 'center',
   },
 
-  goBtnText: {
-    color: '#111',
-    fontWeight: '700',
-  },
-
-  refreshBtn: {
+  bottomLogo: {
     width: s(34),
     height: s(34),
-    borderRadius: s(17),
-    backgroundColor: '#f0f0f0',
+    resizeMode: 'contain',
+  },
+
+  bottomPlayerText: {
+    color: '#ccc',
+    fontSize: s(10),
+    textAlign: 'center',
+    marginTop: s(4),
+    fontWeight: '600',
+  },
+
+  bottomStats: {
+    marginTop: s(4),
+  },
+
+  bottomStat: {
+    color: '#999',
+    fontWeight: '600',
+    fontSize: s(9),
+  },
+
+  bottomDice: {
+    width: s(56),
+    height: s(56),
+    borderRadius: s(8),
+    backgroundColor: '#2a2a2a',
     justifyContent: 'center',
     alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#444',
   },
-  teamsContainer: {
+
+  bottomDiceText: {
+    color: '#777',
+    fontWeight: '700',
+    textAlign: 'center',
+    fontSize: s(12),
+  },
+
+  noDataText: {
+    color: '#999',
+    fontSize: s(14),
+    fontWeight: '600',
+  },
+  dice: {
+    position: 'relative',
     flexDirection: 'row',
     flexWrap: 'wrap',
     justifyContent: 'space-between',
-    marginHorizontal: s(10),
-    marginTop: s(10),
-    marginBottom: s(8),
+    marginHorizontal: '2%',
+    top: s(16),
+  },
+  dice2: {
+    position: 'relative',
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+    marginHorizontal: '2%',
+    bottom: s(16),
+  },
+  diceboard: {
+    position: 'relative',
+    backgroundColor: '#d9d9d9',
+    width: '48%',
+    height: s(42),
+    borderTopLeftRadius: s(6),
+    borderTopRightRadius: s(6),
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: s(8),
+    borderWidth: 2,
+    borderColor: '#fff',
+    zIndex: 30,
+  },
+
+  teamLogoImg: {
+    width: s(34),
+    height: s(34),
+  },
+
+  cardInner: {
+    flexDirection: 'row',
+    alignItems: 'center',
     gap: s(8),
   },
 
-  teamCard: {
-    width: '48%',
-    backgroundColor: '#1a1a1a',
-    borderRadius: s(8),
-    borderWidth: 1,
-    borderColor: '#333',
-    paddingHorizontal: s(10),
-    paddingVertical: s(10),
-    elevation: 3,
+  cardInnerReverse: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: s(8),
+    marginLeft: 'auto',
   },
 
-  activeTeamCard: {
-    borderColor: '#005eff',
-    borderWidth: 2,
+  lastMovedText: {
+    fontSize: s(10),
+    color: '#333',
+    fontWeight: '700',
   },
 
-teamNumberCircle: {
-  position: 'absolute',
-  top: -10,
-  alignSelf: 'center',
-  width: s(22),
-  height: s(22),
-  borderRadius: s(11),
-  backgroundColor: '#f2b000',
-  justifyContent: 'center',
-  alignItems: 'center',
-  zIndex: 10,
-},
+  centerDiceBox: {
+    position: 'absolute',
+    left: '50%',
+    transform: [{ translateX: -14 }],
+  },
 
-teamNumberText: {
-  color: '#000',
-  fontWeight: '900',
-  fontSize: s(11),
-},
-
-  teamTitle: {
-  color: '#ccc',
-  fontSize: s(12),
-  fontWeight: '700',
-  minHeight: s(26),
-},
-
-teamBottom: {
-  flexDirection: 'row',
-  justifyContent: 'space-between',
-  marginTop: s(6),
-},
-
-teamStat: {
-  flexDirection: 'row',
-  alignItems: 'center',
-},
-
-crossIcon: {
-  width: s(16),
-  height: s(16),
-  resizeMode: 'contain',
-  marginRight: s(3),
-  tintColor: '#ff4444',
-},
-
-teamPawn: {
-  width: s(16),
-  height: s(16),
-  resizeMode: 'contain',
-  marginRight: s(3),
-},
-
-teamStatText: {
-  color: '#fff',
-  fontWeight: '700',
-  fontSize: s(12),
-},
-
-youMiniTag: {
-  position: 'absolute',
-  right: s(4),
-  top: s(4),
-  backgroundColor: '#2d74ff',
-  paddingHorizontal: s(5),
-  paddingVertical: s(1),
-  borderRadius: s(4),
-},
-
-youMiniText: {
-  color: '#fff',
-  fontSize: s(9),
-  fontWeight: '700',
-},
+  fallbackDiceText: {
+    fontSize: s(16),
+    fontWeight: '800',
+    color: '#555',
+  },
 });

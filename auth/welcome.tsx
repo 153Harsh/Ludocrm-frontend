@@ -11,15 +11,21 @@ type RootStackParamList = {
 };
 const { width: W, height: H } = Dimensions.get('window');
 const s = (size: number) => (W / 390) * size;
+
 export default function WelcomeScreen() {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
 
   return (
     <View style={styles.container}>
       <Image source={bgImg} style={styles.bgImage} />
-      <TouchableOpacity style={styles.buttonWrapper} onPress={() => navigation.navigate('Login')}>
+
+      <TouchableOpacity
+        style={styles.buttonWrapper}
+        onPress={() => navigation.navigate('Login')}
+        activeOpacity={0.9}
+      >
         <LinearGradient
-          colors={['#5d28be','#5d25c5','#a17ee3', '#b58dff']}
+          colors={['#5d28be', '#5d25c5', '#a17ee3', '#b58dff']}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 0 }}
           style={styles.button}
@@ -38,27 +44,34 @@ const styles = StyleSheet.create({
     backgroundColor: '#fff',
   },
   bgImage: {
-    width: '100%',
-    height: "100%",
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    width: W,
+    height: H,
     resizeMode: 'cover',
   },
   buttonWrapper: {
-    position:'absolute',
-    bottom: "10%",
+    position: 'absolute',
+    left: s(24),
+    right: s(24),
+    bottom: s(36),
     borderRadius: 8,
     overflow: 'hidden',
     borderColor: '#bfbfbf',
     borderWidth: 1,
+    alignItems: 'center',
   },
   button: {
     paddingHorizontal: s(30),
     paddingVertical: s(12),
     borderRadius: 8,
-    
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   buttonText: {
     color: '#fff',
-    fontSize: 16,
+    fontSize: s(16),
     fontWeight: '600',
     textAlign: 'center',
   },

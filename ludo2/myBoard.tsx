@@ -1,12 +1,12 @@
-import React, { useEffect, useRef, useState, useCallback, JSX } from 'react';
+import React, { useEffect, useRef, useState, useCallback,JSX } from 'react';
+
 import {
-  View,
   Text,
   Image,
   StyleSheet,
   Dimensions,
   TouchableOpacity,
-  ScrollView,
+  View,
   Alert,
   ActivityIndicator,
 } from 'react-native';
@@ -21,9 +21,10 @@ import DiceThree from '../assets/dice-six-faces-three.svg';
 import DiceFour from '../assets/dice-six-faces-four.svg';
 import DiceFive from '../assets/dice-six-faces-five.svg';
 import DiceSix from '../assets/dice-six-faces-six.svg';
-
+import { useNavigation, } from '@react-navigation/native';
+import Chat from './chat';
 const { width: W, height: H } = Dimensions.get('window');
-const s = (size: number) => (W / 390) * size;
+const s = (size: number) => (Math.min(W, H) / 390) * size;
 const BOARD_SIZE = W * 0.95;
 const SOURCE_BOARD_WIDTH = 1803;
 const SOURCE_BOARD_HEIGHT = 1799;
@@ -37,8 +38,6 @@ const TILE_W = GRID_WIDTH / 15;
 const TILE_H = GRID_HEIGHT / 15;
 const PAWN_SIZE = Math.min(TILE_W, TILE_H) * 0.9;
 const PAWN_TIP = PAWN_SIZE * 0.86;
-
-// Board track constants
 const AREA_TRACK: Record<number, Array<[number, number]>> = {
   1: [
     [8, 9],
@@ -121,7 +120,6 @@ const AREA_TRACK: Record<number, Array<[number, number]>> = {
     [9, 8],
   ],
 };
-
 const HOME_TRACK: Record<string, Array<[number, number]>> = {
   blue: [
     [7, 14],
@@ -156,26 +154,12 @@ const HOME_TRACK: Record<string, Array<[number, number]>> = {
     [9, 7],
   ],
 };
-
-const HOME_AREA_BY_COLOR: Record<string, number> = {
-  blue: 1,
-  red: 2,
-  green: 3,
-  yellow: 4,
-};
-const COLOR_BY_HOME_AREA: Record<number, string> = {
-  1: 'blue',
-  2: 'red',
-  3: 'green',
-  4: 'yellow',
-};
 const FINISH_POSITIONS: Record<string, [number, number]> = {
   red: [6, 7],
   green: [7, 6],
   blue: [7, 8],
   yellow: [8, 7],
 };
-
 const BASE_POSITIONS: Record<string, Array<[number, number]>> = {
   blue: [
     [1.12, 11.47],
@@ -202,14 +186,6 @@ const BASE_POSITIONS: Record<string, Array<[number, number]>> = {
     [12.1, 12.84],
   ],
 };
-
-const COLOR_ACCENT: Record<string, string> = {
-  red: '#e32425',
-  green: '#0fba53',
-  yellow: '#ff8a00',
-  blue: '#1179cf',
-};
-
 type PawnColor = 'red' | 'green' | 'yellow' | 'blue';
 
 interface Pawn {
@@ -220,7 +196,6 @@ interface Pawn {
   currentPosition: string;
   moves: number;
 }
-
 interface Player {
   playerId: string;
   playerName: string;
@@ -236,7 +211,9 @@ interface Player {
 }
 type DiceByPlayerRow = {
   playerId: string;
+  teamId?: string;
   diceValue: number | null;
+  uploadId?: string | null;
   rolledAt?: string | null;
 };
 
@@ -248,14 +225,31 @@ const DICE_IMAGE_BY_VALUE: Record<number, any> = {
   5: DiceFive,
   6: DiceSix,
 };
-
 const PAWN_IMAGES = {
   red: require('../assets/gameAssets/pawn-red.png'),
   green: require('../assets/gameAssets/pawn-green.png'),
   yellow: require('../assets/gameAssets/pawn-yellow.png'),
   blue: require('../assets/gameAssets/pawn-blue.png'),
 };
+const HOME_AREA_BY_COLOR: Record<PawnColor, number> = {
+  blue: 1,
+  red: 2,
+  green: 3,
+  yellow: 4,
+};
 
+const COLOR_BY_HOME_AREA: Record<number, PawnColor> = {
+  1: 'blue',
+  2: 'red',
+  3: 'green',
+  4: 'yellow',
+};
+
+const isPawnColor = (color?: string | null): color is PawnColor =>
+  color === 'blue' ||
+  color === 'red' ||
+  color === 'green' ||
+  color === 'yellow';
 const teamLogos: Record<string, ReturnType<typeof require>> = {
   'Andhra Blasters': require('../assets/teamLogo/AndhraBlasters.png'),
   AndhraBlasters: require('../assets/teamLogo/AndhraBlasters.png'),
@@ -330,6 +324,24 @@ const getTeamLogo = (team?: string | null) => {
   );
 };
 
+const normalizeDiceRows = (rows?: any[]): DiceByPlayerRow[] =>
+  (Array.isArray(rows) ? rows : []).map((d: any) => ({
+    playerId: String(d.teamPlayerId || d.playerId),
+    teamId:
+      d.teamId === null || d.teamId === undefined ? undefined : String(d.teamId),
+    diceValue:
+      d.diceValue === null || d.diceValue === undefined
+        ? null
+        : Number(d.diceValue),
+    uploadId:
+      d.id === null || d.id === undefined
+        ? d.uploadId === null || d.uploadId === undefined
+          ? null
+          : String(d.uploadId)
+        : String(d.id),
+    rolledAt: d.rolledAt ?? d.dateOfUpload ?? null,
+  }));
+
 function positionToGrid(pos: string, color: string): [number, number] | null {
   if (!pos || pos === '0') return null;
   if (pos === 'finished') return FINISH_POSITIONS[color] || null;
@@ -355,6 +367,7 @@ function gridToPixel(col: number, row: number) {
 }
 
 export default function MyBoardScreen(): React.ReactElement {
+  
   const { session, user } = useAuth();
   const isFlm = user?.role?.toLowerCase() === 'flm';
   const myFlmId = isFlm ? user?.id : user?.flmId;
@@ -363,25 +376,151 @@ export default function MyBoardScreen(): React.ReactElement {
   const [pawns, setPawns] = useState<Pawn[]>([]);
   const [players, setPlayers] = useState<Player[]>([]);
   const [loading, setLoading] = useState(true);
-  const [connected, setConnected] = useState(false);
-
-  // Keep all dice rows from backend so we can render dice + image per team/player
   const [diceRows, setDiceRows] = useState<DiceByPlayerRow[]>([]);
   const myPlayerIdForDice = isFlm ? myFlmId : user?.id;
+  const myPlayerColor =
+  players.find(p => p.playerId === myFlmId)?.color || 'blue';
 
-  const [myDice, setMyDice] = useState<number | null>(null);
+const getPerspectiveArea = useCallback(
+  (area: number) => {
+    if (!myPlayerColor) return area;
 
-  // Upcoming (pre-approved) dice values (max 3) for the left info panel
-  const [unplayedDiceValues, setUnplayedDiceValues] = useState<number[]>([]);
-  const [selectedTeam, setSelectedTeam] = useState<number | null>(null);
+    return ((area - HOME_AREA_BY_COLOR[myPlayerColor] + 4) % 4) + 1;
+  },
+  [myPlayerColor],
+);
+
+const getPerspectiveColor = useCallback(
+  (color?: string | null): PawnColor => {
+    if (!isPawnColor(color)) return 'blue';
+
+    return COLOR_BY_HOME_AREA[
+      getPerspectiveArea(HOME_AREA_BY_COLOR[color])
+    ];
+  },
+  [getPerspectiveArea],
+);
+
+const getPerspectivePosition = useCallback(
+  (position?: string | number | null) => {
+    const normalized = String(position ?? '').trim();
+
+    return normalized.replace(
+      /(cell-area-|home-area-)(\d+)(-id-\d+)/,
+      (_match, prefix, area, suffix) =>
+        `${prefix}${getPerspectiveArea(Number(area))}${suffix}`,
+    );
+  },
+  [getPerspectiveArea],
+);
 
   const socketRef = useRef<Socket | null>(null);
   const creatorId = 'S1101';
-  const myPlayerColor = players.find(p => p.playerId === myFlmId)?.color;
-  const myPlayer = players.find(p => p.playerId === myFlmId);
 
   const pawnsRef = useRef<Pawn[]>([]);
   const [boardData, setBoardData] = useState<any>(null);
+  const [activePlayers, setActivePlayers] = useState<any[]>([]);
+const [showChat, setShowChat] =
+  useState(false);
+  const usedDiceUploadIdRef = useRef<string | null>(null);
+  
+  const [currentDiceValue, setCurrentDiceValue] = useState<number | null>(null);
+
+  const [selectedUploadId, setSelectedUploadId] = useState<string | null>(null);
+
+  const [isSelectingDice, setIsSelectingDice] = useState(false);
+const navigation = useNavigation();
+  useEffect(() => {
+    (globalThis as any).boardId = boardId;
+
+    return () => {
+      (globalThis as any).boardId = null;
+      (globalThis as any).isMyBoardActivePlayer = false;
+    };
+  }, [boardId]);
+
+  useEffect(() => {
+    const isActiveOnMyBoard =
+      !!boardId &&
+      activePlayers.some(
+        player =>
+          String(player.boardId) === String(boardId) &&
+          String(player.playerId) === String(user?.id) &&
+          String(player.flmId) === String(myFlmId),
+      );
+
+    (globalThis as any).isMyBoardActivePlayer = isActiveOnMyBoard;
+  }, [activePlayers, boardId, myFlmId, user?.id]);
+  const fetchActivePlayers = async (bid: number) => {
+    try {
+      const res = await fetch(
+        `${API_BASE_URL}/api/active-player/board/${bid}`,
+        {
+          headers: authHeaders(session?.token),
+        },
+      );
+
+      const json = await res.json();
+
+      if (json?.success) {
+        setActivePlayers(json.data || []);
+      }
+    } catch (err) {
+
+    }
+  };
+  useEffect(() => {
+    const unsubscribe = navigation.addListener('beforeRemove', e => {
+      if (!(globalThis as any).isMyBoardActivePlayer) {
+        return;
+      }
+
+      e.preventDefault();
+
+      Alert.alert('Leave Board', 'Want to leave board?', [
+        {
+          text: 'No',
+          style: 'cancel',
+        },
+        {
+          text: 'Yes',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              fetch(`${API_BASE_URL}/api/active-player/end`, {
+                method: 'POST',
+                headers: {
+                  ...authHeaders(session?.token),
+                  'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                  boardId,
+                  playerId: user?.id,
+                  playerRole: user?.role,
+                  flmId: myFlmId,
+                }),
+              });
+
+              socketRef.current?.emit('playerLeft', {
+                boardId,
+                playerId: myFlmId,
+                userId: user?.id,
+              });
+
+              (globalThis as any).isMyBoardActivePlayer = false;
+              (globalThis as any).boardId = null;
+
+              navigation.dispatch(e.data.action);
+            } catch (err) {
+              // console.log(err);
+            }
+          },
+        },
+      ]);
+    });
+
+    return unsubscribe;
+  }, [navigation, boardId, myFlmId, session?.token, user?.id, user?.role]);
 
   useEffect(() => {
     pawnsRef.current = pawns;
@@ -389,25 +528,35 @@ export default function MyBoardScreen(): React.ReactElement {
 
   const fetchBoard = useCallback(async () => {
     if (!myFlmId) return;
+
     try {
       setLoading(true);
+
       const activeRes = await fetch(
         `${API_BASE_URL}/api/flm/${myFlmId}/boards/active`,
         {
           headers: authHeaders(session?.token),
         },
       );
+
       const activeJson = await activeRes.json();
+
+      // console.log('ACTIVE JSON =>', activeJson);
+
       if (!activeJson.success || !activeJson.data?.length) {
         setLoading(false);
         return;
       }
+
       const activeBoard = activeJson.data[0];
+
       setBoardId(activeBoard.id);
-      await fetchBoardState(activeBoard.id);
+      fetchBoardState(activeBoard.id);
+
+      setLoading(false);
     } catch (e) {
       console.warn('fetchBoard error:', e);
-    } finally {
+
       setLoading(false);
     }
   }, [myFlmId, session?.token]);
@@ -434,282 +583,651 @@ export default function MyBoardScreen(): React.ReactElement {
       setPlayers(json.data.players || []);
       setBoardData(json.data);
 
-      const incomingDiceRows = (json.data.diceValue || []).map((d: any) => ({
-        playerId: String(d.playerId),
-        diceValue:
-          d.diceValue === null || d.diceValue === undefined
-            ? null
-            : Number(d.diceValue),
-        rolledAt: d.rolledAt ?? null,
-      })) as DiceByPlayerRow[];
+      const incomingDiceRows = normalizeDiceRows(
+        json.data.diceValue || json.data.allPlayersDice || [],
+      );
 
       setDiceRows(incomingDiceRows);
-
-      // unplayedDiceValue might come from backend as part of loaded dice rows.
-      // We use it only to show upcoming dice (max 3) in the LEFT info panel.
-      const unplayed = (json.data?.unplayedDiceValue ?? json.data?.unplayedDiceValues ?? null) as
-        | number
-        | number[]
-        | null;
+      const unplayed = (json.data?.unplayedDiceValue ??
+        json.data?.unplayedDiceValues ??
+        null) as number | number[] | null;
 
       const normalizedUnplayed =
-        unplayed == null
-          ? []
-          : Array.isArray(unplayed)
-            ? unplayed
-            : [unplayed];
-
-      setUnplayedDiceValues(normalizedUnplayed.filter((n): n is number => typeof n === 'number').slice(0, 3));
+        unplayed == null ? [] : Array.isArray(unplayed) ? unplayed : [unplayed];
 
       const myDiceRow = incomingDiceRows.find(
-        r => String(r.playerId) === String(myPlayerIdForDice),
+        (r: DiceByPlayerRow) =>
+          String(r.playerId) === String(myPlayerIdForDice),
       );
-      setMyDice(myDiceRow?.diceValue ?? null);
     } catch (e) {
       console.warn('fetchBoardState error:', e);
     }
+    fetchActivePlayers(bid);
   };
 
   const sleep = (ms: number) =>
     new Promise<void>(resolve => setTimeout(() => resolve(), ms));
 
-  const animatePawnMovement = async (oldPawn: Pawn, newPawn: Pawn) => {
-    const posInfo = (pos: string) => {
-      const normal = pos.match(/cell-area-(\d+)-id-(\d+)/);
-      if (normal)
-        return { type: 'cell', area: Number(normal[1]), id: Number(normal[2]) };
-      const home = pos.match(/home-area-(\d+)-id-(\d+)/);
-      if (home)
-        return { type: 'home', area: Number(home[1]), id: Number(home[2]) };
-      return null;
-    };
+  const animatePawnMovement = async (
+    oldPawn: any,
+    newPawn: any,
+    movedPawnData?: any,
+  ) => {
+    try {
+      if (!movedPawnData?.steps) {
+        setPawns(prev => prev.map(p => (p.id === newPawn.id ? newPawn : p)));
 
-    setPawns(prev => prev.map(p => (p.id === newPawn.id ? newPawn : p)));
+        return;
+      }
+
+      const steps = Number(movedPawnData.steps);
+
+      if (!steps || steps <= 0) {
+        setPawns(prev => prev.map(p => (p.id === newPawn.id ? newPawn : p)));
+
+        return;
+      }
+      let currentPos = oldPawn.currentPosition;
+
+      for (let i = 0; i < steps; i++) {
+        currentPos = getNextCellPosition(currentPos, oldPawn.color);
+
+        const animatedPawn = {
+          ...oldPawn,
+          currentPosition: currentPos,
+        };
+
+        setPawns(prev =>
+          prev.map(p => (p.id === animatedPawn.id ? animatedPawn : p)),
+        );
+
+        await sleep(50);
+      }
+
+      setPawns(prev => prev.map(p => (p.id === newPawn.id ? newPawn : p)));
+    } catch (err) {
+      // console.log('❌ animation error:', err);
+      setPawns(prev => prev.map(p => (p.id === newPawn.id ? newPawn : p)));
+    }
   };
+
+const buildRouteForColor = (color: PawnColor): string[] => {
+  const homeAreaId = HOME_AREA_BY_COLOR[color] ?? 1;
+  const route: string[] = [];
+
+  const getNextRouteCell = (areaId: number, cellNum: number) => {
+    if (cellNum === 7 && areaId !== homeAreaId) {
+      return { areaId, cellNum: 13 };
+    }
+
+    let nextAreaId = areaId;
+    let nextCellNum = cellNum + 1;
+
+    if (nextCellNum > 18) {
+      nextCellNum = 1;
+      nextAreaId = (areaId % 4) + 1;
+    }
+
+    return { areaId: nextAreaId, cellNum: nextCellNum };
+  };
+
+  let areaId = homeAreaId;
+  let cellNum = 14;
+
+  while (true) {
+    route.push(`cell-area-${areaId}-id-${cellNum}`);
+
+    if (areaId === homeAreaId && cellNum === 12) {
+      break;
+    }
+
+    const next = getNextRouteCell(areaId, cellNum);
+    areaId = next.areaId;
+    cellNum = next.cellNum;
+
+    if (route.length > 100) {
+      break;
+    }
+  }
+
+  return route;
+};
+
+const ROUTES_BY_COLOR: Record<string, string[]> = {
+  red: buildRouteForColor('red'),
+  blue: buildRouteForColor('blue'),
+  green: buildRouteForColor('green'),
+  yellow: buildRouteForColor('yellow'),
+};
+
+const getNextCellPosition = (
+  currentPosition: string,
+  color: string,
+) => {
+  if (currentPosition === 'finished') {
+    return 'finished';
+  }
+
+  const route =
+    ROUTES_BY_COLOR[color] ||
+    ROUTES_BY_COLOR.red;
+
+  const currentIndex =
+    route.indexOf(currentPosition);
+
+  if (currentIndex === -1) {
+    return currentPosition;
+  }
+
+  if (currentIndex === route.length - 1) {
+    return 'finished';
+  }
+
+  return route[currentIndex + 1];
+};
 
   useEffect(() => {
     fetchBoard();
   }, [fetchBoard]);
 
   useEffect(() => {
-    if (!boardId) return;
+    if (!boardId || !myFlmId) {
+      return;
+    }
+
+    if (socketRef.current) {
+      // console.log('⚠️ Socket already exists');
+      return;
+    }
+
+    // console.log('🚀 Initializing socket...');
+
     const socket = io(API_BASE_URL, {
       transports: ['websocket'],
       reconnection: true,
+      forceNew: true,
     });
+
     socketRef.current = socket;
 
     socket.on('connect', () => {
-      setConnected(true);
-      socket.emit('joinRoom', { 
-        boardId, 
-        playerId: myFlmId,
-        userId: user?.id,
-        isSpectator: false 
-      });
+      // console.log('✅ Socket connected:', socket.id);
+
+      socket.emit(
+        'joinGame',
+        {
+          boardId,
+          playerId: myFlmId,
+          userId: user?.id,
+        },
+        (response: any) => {
+          // console.log(
+          //   '🎲 FULL JOIN RESPONSE:',
+          //   JSON.stringify(response, null, 2),
+          // );
+
+          if (!response?.ok) {
+            // console.log('❌ Join failed:', response?.msg);
+            return;
+          }
+
+          const data = response?.data;
+
+          if (!data) {
+            // console.log('❌ No join data');
+            return;
+          }
+          setPlayers(data.players || []);
+          setPawns(data.pawns || []);
+          setBoardData(data);
+          const incomingDiceRows = normalizeDiceRows(
+            data.diceValue || data.allPlayersDice || [],
+          );
+
+          // console.log('🎯 DICE ROWS =>', incomingDiceRows);
+
+          setDiceRows(incomingDiceRows);
+
+          const myRow = incomingDiceRows.find(
+            (r: DiceByPlayerRow) =>
+              String(r.playerId) === String(myPlayerIdForDice),
+          );
+
+          // console.log('🎯 MY ROW =>', myRow);
+
+          /*
+          fetch(`${API_BASE_URL}/api/active-player/set`, {
+            method: 'POST',
+            headers: {
+              ...authHeaders(session?.token),
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              boardId,
+              playerId: user?.id,
+              playerRole: user?.role,
+              flmId: myFlmId,
+            }),
+          })
+            .then(res => res.json())
+            .then(json => {
+              // console.log('♻️ ACTIVE PLAYER RESTORED', json);
+
+              socket.emit('joinGameAsActive', {
+                boardId,
+                playerId: myFlmId,
+                userId: user?.id,
+              });
+            })
+            .catch(err => {
+              // console.log('❌ restore active player error', err);
+            });
+          */
+          fetchActivePlayers(boardId);
+        },
+      );
+      
+    });
+    socket.on('disconnect', reason => {
+      // console.log('❌ Socket disconnected:', reason);
+    });
+    socket.on('connect_error', err => {
+      // console.log('❌ connect_error', err);
     });
 
-    socket.on('disconnect', () => {
-      setConnected(false);
+    socket.on('error', err => {
+      // console.log('❌ socket error', err);
+    });
+    socket.onAny((event, ...args) => {
+        // console.log('📡 SOCKET EVENT =>', event);
+        // console.log('📦 SOCKET DATA =>', args);
+    });
+    socket.on('activePlayerJoined', (data: any) => {
+      console.log('🟣 activePlayerJoined', data);
+
+      if (data?.boardId !== boardId) {
+        return;
+      }
+      fetchActivePlayers(boardId);
+      const diceValues =
+  data?.loggedInMrStats?.diceValues || [];
+
+if (diceValues.length) {
+  setDiceRows(prev => {
+    const next = [...prev];
+
+    diceValues.forEach((d: any) => {
+      const row = {
+        playerId: String(data.flmId),
+
+        diceValue:
+          d.diceValue === null ||
+          d.diceValue === undefined
+            ? null
+            : Number(d.diceValue),
+
+        uploadId:
+          d.id === null || d.id === undefined ? null : String(d.id),
+
+        rolledAt:
+          d.dateOfUpload || null,
+      };
+
+      const existingIndex = next.findIndex(
+        r =>
+          String(r.uploadId) ===
+          String(row.uploadId),
+      );
+
+      if (existingIndex >= 0) {
+        next[existingIndex] = row;
+      } else {
+        next.push(row);
+      }
     });
 
-    // Player joined the game
+    return next;
+  });
+}
+    });
     socket.on('playerJoined', (data: any) => {
-      if (data?.boardId !== boardId) return;
-      console.log('Player joined:', data);
-      
-      // Refresh board state to get updated player list
-      if (boardId) {
-        fetchBoardState(boardId);
-      }
-    });
+      // console.log('👤 playerJoined', data);
 
-    // Player left the game
+      if (data?.boardId !== boardId) {
+        return;
+      }
+      fetchActivePlayers(boardId);
+    });
     socket.on('activePlayerLeft', (data: any) => {
-      if (data?.boardId !== boardId) return;
-      console.log('Player left:', data);
-      // Refresh board state
-      if (boardId) {
-        fetchBoardState(boardId);
+      // console.log('🚪 activePlayerLeft', data);
+
+      if (data?.boardId !== boardId) {
+        return;
       }
     });
+    socket.on('roomUpdate', (data: any) => {
+      // console.log('🏠 roomUpdate', data);
 
-    // Dice was rolled
+      if (data?.boardId !== boardId) {
+        return;
+      }
+    });
     socket.on('diceRolled', (data: any) => {
-      if (data?.boardId !== boardId) return;
-      console.log('Dice rolled:', data);
-      
-      // Update players with new stats
-      if (data?.updatedPlayers?.length) {
-        setPlayers(prev => {
-          return prev.map(existingPlayer => {
-            const updatedPlayer = data.updatedPlayers.find(
-              (p: Player) => p.playerId === existingPlayer.playerId,
-            );
-            if (!updatedPlayer) return existingPlayer;
-            return {
-              ...existingPlayer,
-              moves:
-                updatedPlayer.moves !== undefined
-                  ? Number(updatedPlayer.moves)
-                  : existingPlayer.moves,
-              home:
-                updatedPlayer.home !== undefined
-                  ? Number(updatedPlayer.home)
-                  : existingPlayer.home,
-              currentDiceRollBalance:
-                updatedPlayer.currentDiceRollBalance !== undefined
-                  ? Number(updatedPlayer.currentDiceRollBalance)
-                  : existingPlayer.currentDiceRollBalance,
-              rank: updatedPlayer.rank ?? existingPlayer.rank,
-              winPosition:
-                updatedPlayer.winPosition ?? existingPlayer.winPosition,
-              lastMovedAt:
-                updatedPlayer.lastMovedAt ?? existingPlayer.lastMovedAt,
-            };
-          });
-        });
+      // console.log('🎲 diceRolled', data);
+
+      if (data?.boardId !== boardId) {
+        return;
       }
 
-      // Update dice values
-      if (data?.allPlayersDice?.length) {
-        const incomingDiceRows = data.allPlayersDice.map((d: any) => ({
-          playerId: String(d.playerId),
-          diceValue:
-            d.diceValue === null || d.diceValue === undefined
-              ? null
-              : Number(d.diceValue),
-          rolledAt: d.rolledAt ?? null,
-        })) as DiceByPlayerRow[];
+      if (Array.isArray(data?.allPlayersDice)) {
+        const incomingDiceRows = normalizeDiceRows(
+          data.diceValue || data.allPlayersDice || [],
+        );
 
         setDiceRows(incomingDiceRows);
 
         const myRow = incomingDiceRows.find(
-          r => String(r.playerId) === String(myPlayerIdForDice),
+          (r: DiceByPlayerRow) =>
+            String(r.playerId) === String(myPlayerIdForDice),
         );
-        if (myRow !== undefined) {
-          setMyDice(myRow?.diceValue ?? null);
-        }
       }
     });
-
-    // Player started rolling dice
-    socket.on('playerStartedRolling', (data: any) => {
-      if (data?.boardId !== boardId) return;
-      console.log('Player started rolling:', data.playerId);
+    socket.on('newDiceValue', (data: any) => {
+      if (Array.isArray(data?.diceValues)) {
+        setDiceRows(prev => [
+          ...prev.filter(
+            r => String(r.playerId) !== String(myFlmId) || r.diceValue == null,
+          ),
+          ...normalizeDiceRows(data.diceValues).map(row => ({
+            ...row,
+            playerId: String(myFlmId),
+          })),
+        ]);
+      }
     });
+    socket.on('diceCleared', (data: any) => {
+      // console.log('🧹 diceCleared', data);
 
+      if (Array.isArray(data?.allPlayersDice)) {
+        const incomingDiceRows = normalizeDiceRows(
+          data.diceValue || data.allPlayersDice || [],
+        );
+
+        setDiceRows(incomingDiceRows);
+
+        const myRow = incomingDiceRows.find(
+          (r: DiceByPlayerRow) =>
+            String(r.playerId) === String(myPlayerIdForDice),
+        );
+      }
+    });
     socket.on('pawnMoved', async (delta: any) => {
+      // console.log('♟️ pawnMoved', delta);
+
       const d = delta?.data;
-      if (!d || d.boardId !== boardId) return;
+
+      if (!d || d.boardId !== boardId) {
+        return;
+      }
+      if (Array.isArray(d.updatedPlayers)) {
+        setPlayers(prev =>
+          prev.map(p => {
+            const updated = d.updatedPlayers.find(
+              (u: any) => u.playerId === p.playerId,
+            );
+
+            return updated ? { ...p, ...updated } : p;
+          }),
+        );
+      }
+      if (Array.isArray(d.updatedDice)) {
+        setDiceRows(prev => {
+          const next = [...prev];
+
+          d.updatedDice.forEach((updated: any) => {
+            const index = next.findIndex(
+              r => String(r.playerId) === String(updated.playerId),
+            );
+
+            if (index >= 0) {
+              next[index] = {
+  ...next[index],
+  diceValue: updated.diceValue,
+  uploadId:
+    updated.id === null || updated.id === undefined
+      ? null
+      : String(updated.id),
+  rolledAt: updated.rolledAt,
+};
+            }
+          });
+
+          return next;
+        });
+      }
       if (d.updatedPawns?.length) {
         for (const updatedPawn of d.updatedPawns) {
           const oldPawn = pawnsRef.current.find(p => p.id === updatedPawn.id);
+
           if (!oldPawn) continue;
-          await animatePawnMovement(oldPawn, updatedPawn);
+
+          animatePawnMovement(oldPawn, updatedPawn, d.movedPawn);
         }
       }
-      if (d.updatedPlayers?.length) {
-        setPlayers(prev => {
-          return prev.map(existingPlayer => {
-            const updatedPlayer = d.updatedPlayers.find(
-              (p: Player) => p.playerId === existingPlayer.playerId,
-            );
-            if (!updatedPlayer) return existingPlayer;
-            return {
-              ...existingPlayer,
-              moves:
-                updatedPlayer.moves !== undefined
-                  ? Number(updatedPlayer.moves)
-                  : existingPlayer.moves,
-              home:
-                updatedPlayer.home !== undefined
-                  ? Number(updatedPlayer.home)
-                  : existingPlayer.home,
-              currentDiceRollBalance:
-                updatedPlayer.currentDiceRollBalance !== undefined
-                  ? Number(updatedPlayer.currentDiceRollBalance)
-                  : existingPlayer.currentDiceRollBalance,
-              rank: updatedPlayer.rank ?? existingPlayer.rank,
-              winPosition:
-                updatedPlayer.winPosition ?? existingPlayer.winPosition,
-              lastMovedAt:
-                updatedPlayer.lastMovedAt ?? existingPlayer.lastMovedAt,
-            };
-          });
-        });
-      }
-      if (d.updatedDice?.length) {
-        const incomingDiceRows = d.updatedDice.map((r: any) => ({
-          playerId: String(r.playerId),
-          diceValue:
-            r.diceValue === null || r.diceValue === undefined
-              ? null
-              : Number(r.diceValue),
-          rolledAt: r.rolledAt ?? null,
-        })) as DiceByPlayerRow[];
+      socketRef.current?.emit('joinGameAsActive', {
+        boardId,
+        playerId: myFlmId,
+        userId: user?.id,
+      });
 
-        setDiceRows(incomingDiceRows);
-
-        const myRow = incomingDiceRows.find(
-          r => String(r.playerId) === String(myPlayerIdForDice),
-        );
-        if (myRow !== undefined) {
-          setMyDice(myRow?.diceValue ?? null);
-        }
-      }
-    });
-
-    socket.on('uploadStatusChanged', () => {
-      if (boardId) {
-        fetchBoardState(boardId);
-      }
-    });
-
-    return () => {
-      socket.emit('leaveRoom', { boardId });
-      socket.disconnect();
-      socketRef.current = null;
-    };
-  }, [boardId, isFlm, myFlmId, user?.id]);
-
-  const renderBoardPawns = (): React.ReactElement[] => {
-    const posMap = new Map<string, Pawn[]>();
-    pawns.forEach(pawn => {
-      if (!pawn.currentPosition || pawn.currentPosition === '0') return;
-      const grid = positionToGrid(pawn.currentPosition, pawn.color);
-      if (!grid) return;
-      const key = `${grid[0]},${grid[1]}`;
-      if (!posMap.has(key)) posMap.set(key, []);
-      posMap.get(key)!.push(pawn);
-    });
-    const elements: JSX.Element[] = [];
-    posMap.forEach((group, key) => {
-      const [col, row] = key.split(',').map(Number);
-      const pixel = gridToPixel(col, row);
-      group.forEach((pawn, i) => {
-        const offset =
-          group.length > 1 ? (i - (group.length - 1) / 2) * s(5) : 0;
-        elements.push(
-          <View
-            key={pawn.id}
-            style={[
-              styles.boardPawn,
-              { left: pixel.left + offset, top: pixel.top },
-            ]}
-          >
-            <View style={styles.pawnBackplate}>
-              <Image
-                source={PAWN_IMAGES[pawn.color]}
-                style={styles.boardPawnImage}
-              />
-            </View>
-          </View>,
-        );
+      socketRef.current?.emit('playerJoined', {
+        boardId,
+        playerId: myFlmId,
+        userId: user?.id,
       });
     });
-    return elements;
+    return () => {
+      // console.log('🛑 Socket cleanup');
+
+      socket.removeAllListeners();
+
+      socket.disconnect();
+
+      socketRef.current = null;
+    };
+  }, [boardId, myFlmId, user?.id]);
+
+  const handleDiceSelection = (diceValue: number, uploadId: string) => {
+    if (!socketRef.current || !boardId) {
+      return;
+    }
+
+    if (isSelectingDice) {
+      return;
+    }
+
+    setIsSelectingDice(true);
+
+    // console.log('🎲 Selecting dice:', {
+    //   diceValue,
+    //   uploadId,
+    // });
+    // console.log('SELECT DICE IDS =>', {
+    //   myFlmId,
+    //   userId: user?.id,
+    // });
+    socketRef.current.emit(
+      'selectDice',
+      {
+        boardId,
+        playerId: myFlmId,
+        userId: user?.id,
+        selectedValue: diceValue,
+        uploadId,
+      },
+      (response: any) => {
+        // console.log('🎲 selectDice response:', response);
+
+        setIsSelectingDice(false);
+
+        if (!response?.ok) {
+          Alert.alert('Dice Error', response?.msg || 'Failed to select dice');
+          return;
+        }
+
+        setCurrentDiceValue(diceValue);
+
+        setSelectedUploadId(uploadId);
+
+        // console.log('✅ Dice selected successfully');
+      },
+    );
   };
+
+  const handlePawnClick = (pawn: Pawn) => {
+    if (!socketRef.current || !boardId) {
+      return;
+    }
+
+    if (!currentDiceValue) {
+      // console.log('❌ No selected dice');
+      return;
+    }
+
+    if (!selectedUploadId) {
+      // console.log('❌ No uploadId');
+      return;
+    }
+
+    // console.log('♟️ Moving pawn:', {
+    //   pawnId: pawn.id,
+    //   diceValue: currentDiceValue,
+    //   uploadId: selectedUploadId,
+    // });
+    // console.log('PLAYER IDS =>', {
+    //   myFlmId,
+    //   userId: user?.id,
+    // });
+    usedDiceUploadIdRef.current = selectedUploadId;
+
+    socketRef.current.emit(
+      'movePawn',
+      {
+        boardId,
+        pawnId: pawn.id,
+        playerId: myFlmId,
+        userId: user?.id,
+        diceValue: currentDiceValue,
+        uploadId: selectedUploadId,
+      },
+      (response: any) => {
+        // console.log('♟️ movePawn response:', response);
+
+        if (!response?.ok) {
+          Alert.alert('Move Error', response?.msg || 'Failed to move pawn');
+          return;
+        }
+
+        // console.log('✅ Pawn moved successfully');
+        const usedUploadId = selectedUploadId;
+        const usedDiceValue = currentDiceValue;
+
+        socketRef.current?.emit('useDiceValue', {
+          boardId,
+          playerId: user?.id || myPlayerIdForDice,
+          usedValue: usedDiceValue,
+          uploadId: usedUploadId,
+        });
+
+        setDiceRows(prev =>
+          prev.map(r =>
+            String(r.uploadId) === String(usedUploadId)
+              ? {
+                  ...r,
+                  diceValue: null,
+                  uploadId: null,
+                }
+              : r,
+          ),
+        );
+        setCurrentDiceValue(null);
+
+        setSelectedUploadId(null);
+      },
+    );
+  };
+
+const renderBoardPawns = (): React.ReactElement[] => {
+  const posMap = new Map<string, Pawn[]>();
+
+  pawns.forEach(pawn => {
+    if (!pawn.currentPosition || pawn.currentPosition === '0') {
+      return;
+    }
+
+    const perspectiveColor = getPerspectiveColor(pawn.color);
+
+    const grid = positionToGrid(
+      pawn.currentPosition === 'finished'
+        ? 'finished'
+        : getPerspectivePosition(pawn.currentPosition),
+      perspectiveColor,
+    );
+
+    if (!grid) return;
+
+    const key = `${grid[0]},${grid[1]}`;
+
+    if (!posMap.has(key)) {
+      posMap.set(key, []);
+    }
+
+    posMap.get(key)!.push(pawn);
+  });
+
+  const elements: JSX.Element[] = [];
+
+  posMap.forEach((group, key) => {
+    const [col, row] = key.split(',').map(Number);
+
+    const pixel = gridToPixel(col, row);
+
+    group.forEach((pawn, i) => {
+      const offset =
+        group.length > 1
+          ? (i - (group.length - 1) / 2) * s(5)
+          : 0;
+
+      elements.push(
+        <TouchableOpacity
+          key={`${pawn.id}-${pawn.currentPosition}`}
+          activeOpacity={0.8}
+          onPress={() => handlePawnClick(pawn)}
+          style={[
+            styles.boardPawn,
+            {
+              left: pixel.left + offset,
+              top: pixel.top,
+            },
+          ]}
+        >
+          <View style={styles.pawnBackplate}>
+            <Image
+              source={
+                PAWN_IMAGES[
+                  getPerspectiveColor(pawn.color)
+                ]
+              }
+              style={styles.boardPawnImage}
+            />
+          </View>
+        </TouchableOpacity>,
+      );
+    });
+  });
+
+  return elements;
+};
 
   const renderBasePawns = (): React.ReactElement[] => {
     const elements: React.ReactElement[] = [];
@@ -717,8 +1235,13 @@ export default function MyBoardScreen(): React.ReactElement {
     pawns
       .filter(p => !p.currentPosition || p.currentPosition === '0')
       .forEach(p => {
-        if (!basePawnsByColor[p.color]) basePawnsByColor[p.color] = [];
-        basePawnsByColor[p.color].push(p);
+        const perspectiveColor = getPerspectiveColor(p.color);
+
+if (!basePawnsByColor[perspectiveColor]) {
+  basePawnsByColor[perspectiveColor] = [];
+}
+
+basePawnsByColor[perspectiveColor].push(p);
       });
     Object.entries(basePawnsByColor).forEach(([color, colorPawns]) => {
       const positions = BASE_POSITIONS[color] || [];
@@ -727,17 +1250,25 @@ export default function MyBoardScreen(): React.ReactElement {
         if (!pos) return;
         const pixel = gridToPixel(pos[0], pos[1]);
         elements.push(
-          <View
-            key={pawn.id}
-            style={[styles.boardPawn, { left: pixel.left, top: pixel.top }]}
+          <TouchableOpacity
+           key={`${pawn.id}-${pawn.currentPosition}`}
+            activeOpacity={0.8}
+            onPress={() => handlePawnClick(pawn)}
+            style={[
+              styles.boardPawn,
+              {
+                left: pixel.left,
+                top: pixel.top,
+              },
+            ]}
           >
             <View style={styles.pawnBackplate}>
               <Image
-                source={PAWN_IMAGES[pawn.color]}
+                source={PAWN_IMAGES[getPerspectiveColor(pawn.color)]}
                 style={styles.boardPawnImage}
               />
             </View>
-          </View>,
+          </TouchableOpacity>,
         );
       });
     });
@@ -752,24 +1283,30 @@ export default function MyBoardScreen(): React.ReactElement {
       yellow: '',
       blue: '',
     };
-    
+
     // Map player names to colors
     players.forEach(player => {
-      colorToName[player.color] = player.playerName;
+      const activePlayer = activePlayers.find(a => a.flmId === player.playerId);
+
+      if (activePlayer) {
+        colorToName[
+  getPerspectiveColor(player.color)
+] = activePlayer.playerName;
+      }
     });
 
     // Red player - top left
     if (colorToName.red) {
-      const pos = gridToPixel(0,0.2);
+      const pos = gridToPixel(0, 0.2);
       elements.push(
         <View
           key="playerName-red"
-          style={[
-            styles.playerNameTag,
-            { left: pos.left, top: pos.top },
-          ]}
+          style={[styles.playerNameTag, { left: pos.left, top: pos.top }]}
         >
-          <Image source={require('../assets/gameAssets/pawn-white.png')} style={styles.flagIcon} />
+          <Image
+            source={require('../assets/gameAssets/pawn-white.png')}
+            style={styles.flagIcon}
+          />
           <Text style={styles.playerNameText}>{colorToName.red}</Text>
         </View>,
       );
@@ -781,13 +1318,13 @@ export default function MyBoardScreen(): React.ReactElement {
       elements.push(
         <View
           key="playerName-green"
-          style={[
-            styles.playerNameTag,
-            { left: pos.left, top: pos.top,},
-          ]}
+          style={[styles.playerNameTag, { left: pos.left, top: pos.top }]}
         >
           <Text style={styles.playerNameText}>{colorToName.green}</Text>
-          <Image source={require('../assets/gameAssets/pawn-white.png')} style={styles.flagIcon} />
+          <Image
+            source={require('../assets/gameAssets/pawn-white.png')}
+            style={styles.flagIcon}
+          />
         </View>,
       );
     }
@@ -798,64 +1335,127 @@ export default function MyBoardScreen(): React.ReactElement {
       elements.push(
         <View
           key="playerName-yellow"
-          style={[
-            styles.playerNameTag,
-            { left: pos.left, top: pos.top},
-          ]}
+          style={[styles.playerNameTag, { left: pos.left, top: pos.top }]}
         >
           <Text style={styles.playerNameText}>{colorToName.yellow}</Text>
-          <Image source={require('../assets/gameAssets/pawn-white.png')} style={styles.flagIcon} />
+          <Image
+            source={require('../assets/gameAssets/pawn-white.png')}
+            style={styles.flagIcon}
+          />
         </View>,
       );
     }
 
     // Blue player - bottom left (WITH JOIN LOGIC)
-    const handleJoinBlue = () => {
-      Alert.alert(
-        'Join Game',
-        'Do you want to join this room as Blue team?',
-        [
+    const handleJoinBlue = async () => {
+      try {
+        const checkRes = await fetch(
+          `${API_BASE_URL}/api/active-player/check`,
           {
-            text: 'Cancel',
-            style: 'cancel',
-          },
-          {
-            text: 'Join',
-            onPress: async () => {
-              try {
-                // Emit socket event to notify backend
-                socketRef.current?.emit('playerJoined', {
-                  boardId,
-                  playerId: myFlmId,
-                  userId: user?.id,
-                  playerName: user?.name || 'Joined Player',
-                  role: user?.role,
-                });
-
-                // Refresh board state to confirm join from backend
-                setTimeout(() => {
-                  if (boardId) {
-                    fetchBoardState(boardId);
-                  }
-                }, 1000);
-              } catch (error) {
-                console.error('Error joining blue team:', error);
-              }
+            method: 'POST',
+            headers: {
+              ...authHeaders(session?.token),
+              'Content-Type': 'application/json',
             },
+            body: JSON.stringify({
+              boardId,
+              playerId: user?.id,
+              flmId: myFlmId,
+            }),
           },
-        ],
-      );
+        );
+
+        const checkJson = await checkRes.json();
+
+        if (!checkJson?.data?.canPlay) {
+          Alert.alert(
+            'Cannot Join',
+            checkJson?.data?.message || 'Player already active',
+          );
+          return;
+        }
+
+        Alert.alert(
+          'Join Game',
+          'Do you want to join this room as Blue team?',
+          [
+            {
+              text: 'Cancel',
+              style: 'cancel',
+            },
+            {
+              text: 'Join',
+              onPress: async () => {
+                try {
+                  const response = await fetch(
+                    `${API_BASE_URL}/api/active-player/set`,
+                    {
+                      method: 'POST',
+                      headers: {
+                        ...authHeaders(session?.token),
+                        'Content-Type': 'application/json',
+                      },
+                      body: JSON.stringify({
+                        boardId,
+                        playerId: user?.id,
+                        playerRole: user?.role,
+                        flmId: myFlmId,
+                      }),
+                    },
+                  );
+
+                  const json = await response.json();
+
+                  // console.log('JOIN RESPONSE', json);
+
+                  if (json?.success || json?.ok) {
+                    await fetchBoardState(boardId!);
+                    socketRef.current?.emit('joinGame', {
+                      boardId,
+                      playerId: myFlmId,
+                      userId: user?.id,
+                    });
+
+                    // console.log('🔄 REJOIN SENT');
+
+                    setTimeout(() => {
+                      socketRef.current?.emit('joinGameAsActive', {
+                        boardId,
+                        playerId: myFlmId,
+                        userId: user?.id,
+                      });
+
+                      // console.log('✅ joinGameAsActive emitted AFTER REJOIN');
+                    }, 700);
+                    socketRef.current?.emit('playerJoined', {
+                      boardId,
+                      playerId: myFlmId,
+                      userId: user?.id,
+                    });
+                  }
+                } catch (error) {
+                  // console.log(error);
+                }
+              },
+            },
+          ],
+        );
+      } catch (err) {
+        // console.log('join error', err);
+      }
     };
 
     const pos = gridToPixel(0, 14.5);
-    const bluePlayerExists = colorToName.blue; // Check if blue player exists in players array
 
+    const bluePlayerExists = !!blueActivePlayer;
+    // console.log('bluePlayerExists', bluePlayerExists);
     elements.push(
       <TouchableOpacity
         activeOpacity={bluePlayerExists ? 1 : 0.8}
         key="playerName-blue"
         onPress={() => {
-          // Only show popup if no player joined
+          // console.log('Blue clicked');
+
           if (!bluePlayerExists) {
             handleJoinBlue();
           }
@@ -871,15 +1471,15 @@ export default function MyBoardScreen(): React.ReactElement {
             borderRadius: s(8),
             paddingHorizontal: s(8),
           },
-        ]}>
-        
+        ]}
+      >
         <Image
           source={require('../assets/gameAssets/pawn-white.png')}
           style={styles.flagIcon}
         />
 
         <Text style={styles.playerNameText}>
-          {bluePlayerExists ? colorToName.blue : 'Await Player'}
+          {bluePlayerExists ? blueActivePlayer?.playerName : 'Await Player'}
         </Text>
       </TouchableOpacity>,
     );
@@ -904,9 +1504,11 @@ export default function MyBoardScreen(): React.ReactElement {
       </View>
     );
   }
-  const getPlayerByColor = (color: PawnColor) => {
-    return players.find(p => p.color === color);
-  };
+ const getPlayerByColor = (perspectiveColor: PawnColor) => {
+  return players.find(
+    p => getPerspectiveColor(p.color) === perspectiveColor,
+  );
+};
 
   const renderTeamCard = (
     player: Player | undefined,
@@ -914,22 +1516,38 @@ export default function MyBoardScreen(): React.ReactElement {
     reverse?: boolean,
   ) => {
     if (!player) return null;
+const perspectiveColor = getPerspectiveColor(player.color);
+    const diceRow =
+  [...diceRows]
+    .reverse()
+    .find(
+      (r: DiceByPlayerRow) =>
+        String(r.playerId) === String(player.playerId) &&
+        r.diceValue != null,
+    ) || null;
 
-    const diceRow = diceRows.find(
-      r => String(r.playerId) === String(player.playerId),
-    );
+ const diceValue =
+  diceRow?.diceValue == null
+    ? null
+    : Number(diceRow.diceValue);
 
-    const diceValue = diceRow?.diceValue ?? null;
+    // Default dice face when no dice is available yet
+    const diceValueForUI = diceValue == null ? 1 : diceValue;
+
     const logo = getTeamLogo(player.teamName);
     const lastMovedAt = player.lastMovedAt ?? null;
 
     return (
-      <View style={[styles.diceboard, positionStyle]}>
+      <View
+  style={[
+    styles.diceboard,
+    positionStyle,
+  ]}
+>
         {reverse && (
-          <View
+            <View
             style={{
               right: s(8),
-              // bottom: s(4),
               alignSelf: 'center',
               width: '24%',
               alignItems: 'center',
@@ -949,9 +1567,9 @@ export default function MyBoardScreen(): React.ReactElement {
                   })
                 : '—'}
             </Text>
-            {diceValue != null && DICE_IMAGE_BY_VALUE[diceValue] ? (
+            {DICE_IMAGE_BY_VALUE[diceValueForUI] ? (
               (() => {
-                const DiceComponent = DICE_IMAGE_BY_VALUE[diceValue];
+                const DiceComponent = DICE_IMAGE_BY_VALUE[diceValueForUI];
 
                 return <DiceComponent width={s(28)} height={s(28)} />;
               })()
@@ -993,9 +1611,9 @@ export default function MyBoardScreen(): React.ReactElement {
                 resizeMode="contain"
               />
             ) : null}
-            {diceValue != null && DICE_IMAGE_BY_VALUE[diceValue] ? (
+            {DICE_IMAGE_BY_VALUE[diceValueForUI] ? (
               (() => {
-                const DiceComponent = DICE_IMAGE_BY_VALUE[diceValue];
+                const DiceComponent = DICE_IMAGE_BY_VALUE[diceValueForUI];
 
                 return <DiceComponent width={s(28)} height={s(28)} />;
               })()
@@ -1019,18 +1637,41 @@ export default function MyBoardScreen(): React.ReactElement {
     );
   };
   const redPlayer = getPlayerByColor('red');
-  const greenPlayer = getPlayerByColor('green');
-  const yellowPlayer = getPlayerByColor('yellow');
-  const bluePlayer = getPlayerByColor('blue');
+const greenPlayer = getPlayerByColor('green');
+const yellowPlayer = getPlayerByColor('yellow');
+const bluePlayerData = getPlayerByColor('blue');
 
+const blueActivePlayer = activePlayers.find(
+  p => String(p.flmId) === String(bluePlayerData?.playerId),
+);
+
+  const bluePlayerExists = !!blueActivePlayer;
+
+  const bluePlayer = bluePlayerExists ? bluePlayerData : null;
+const perspectiveDiceRow =
+  [...diceRows]
+    .reverse()
+    .find(
+      r =>
+        String(r.playerId) === String(myFlmId) &&
+        r.diceValue != null,
+    ) || null;
+const perspectiveDiceValue =
+  perspectiveDiceRow?.diceValue == null
+    ? null
+    : Number(perspectiveDiceRow.diceValue);
+// console.log('🎲 diceRows =>', diceRows);
+// console.log('🎲 perspectiveDiceRow =>', perspectiveDiceRow);
+// console.log('🎲 perspectiveDiceValue =>', perspectiveDiceValue);
+
+const perspectiveUploadId =
+  perspectiveDiceRow?.uploadId ?? null;
+  // console.log('BLUE PLAYER =>', bluePlayer);
+  // console.log('TEAM NAME =>', bluePlayer?.teamName);
+  // console.log('TEAM LOGO =>', getTeamLogo(bluePlayer?.teamName));
   return (
     <SafeAreaView style={styles.container}>
-      <ScrollView
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={{
-          paddingBottom: s(140),
-        }}
-      >
+      <View>
         {/* TOP: TEAMS GRID */}
         <View style={styles.teamsGrid}>
           {players.map((player, index) => (
@@ -1040,14 +1681,18 @@ export default function MyBoardScreen(): React.ReactElement {
                 styles.teamCard,
                 player.playerId === myFlmId && styles.teamCardActive,
               ]}
-              onPress={() => setSelectedTeam(player.playerId as any)}
             >
               <View style={styles.numberBadge}>
-                <Text style={styles.numberText}>{index + 1}</Text>
+                <Text style={styles.numberText}>
+  {player.rank ?? index + 1}
+</Text>
               </View>
               <Text style={styles.teamName} numberOfLines={2}>
-                {player.teamName || player.playerName}
-              </Text>
+                                    {(player.teamName || player.playerName).replace(
+                                      /([a-z])([A-Z])/g,
+                                      '$1\n$2',
+                                    )}
+                                  </Text>
               <View style={styles.statsRow}>
                 <View style={styles.statItem}>
                   <Image
@@ -1099,20 +1744,6 @@ export default function MyBoardScreen(): React.ReactElement {
           )}
         </View>
 
-        {/* BOTTOM LEFT - BLUE
-<View style={styles.dice}>
-  {renderTeamCard(
-    bluePlayer,
-    {
-      left: s(-2),
-      top: BOARD_SIZE + s(32),
-      borderTopEndRadius: s(0),
-      borderTopStartRadius: s(0),
-    },
-    false,
-  )}
-</View> */}
-
         {/* BOTTOM RIGHT - YELLOW */}
         <View style={{}}>
           {renderTeamCard(
@@ -1136,17 +1767,26 @@ export default function MyBoardScreen(): React.ReactElement {
             source={require('../assets/gameAssets/ludo-board.png')}
             style={styles.boardImage}
           />
-          <View pointerEvents="none" style={styles.pawnLayer}>
+          <View style={styles.pawnLayer}>
             {renderPlayerNamesOnBoard()}
             {renderBasePawns()}
             {renderBoardPawns()}
           </View>
         </View>
-      </ScrollView>
+      </View>
 
-      <TouchableOpacity style={styles.fab}>
-        <Icon name="forum" size={s(24)} color="#fff" />
-      </TouchableOpacity>
+      <TouchableOpacity
+  style={styles.fab}
+  onPress={() => {
+    setShowChat(true);
+  }}
+>
+  <Icon
+    name="forum"
+    size={s(24)}
+    color="#fffdfd"
+  />
+</TouchableOpacity>
       <View
         style={{
           position: 'relative',
@@ -1160,11 +1800,11 @@ export default function MyBoardScreen(): React.ReactElement {
           borderBottomLeftRadius: s(8),
           borderBottomRightRadius: s(8),
           flexDirection: 'row',
-          alignItems: 'center',
+          alignItems: 'flex-start',
           justifyContent: 'space-between',
           paddingHorizontal: s(8),
-          overflow: 'hidden',
-          bottom: s(52),
+          overflow: 'visible',
+          top: s(30),
         }}
       >
         {/* LEFT INFO */}
@@ -1177,10 +1817,11 @@ export default function MyBoardScreen(): React.ReactElement {
         >
           {bluePlayer ? (
             <>
+              {/* TEAM LOGO */}
               <View
                 style={{
                   flexDirection: 'row',
-                  gap: 10,
+                  alignItems: 'center',
                   top: s(4),
                 }}
               >
@@ -1195,10 +1836,13 @@ export default function MyBoardScreen(): React.ReactElement {
                   }}
                 />
               </View>
+
+              {/* MOVES */}
               <View
                 style={{
                   flexDirection: 'row',
                   alignItems: 'center',
+                  marginTop: s(2),
                 }}
               >
                 <Image
@@ -1218,40 +1862,39 @@ export default function MyBoardScreen(): React.ReactElement {
                     color: '#000',
                   }}
                 >
-                  {bluePlayer?.moves}
+                  {bluePlayer?.moves ?? 0}
                 </Text>
               </View>
-
-              <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: s(2), right: s(2) }}>
-                {unplayedDiceValues.length ? (
-                  <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                    {unplayedDiceValues.slice(0, 3).map((val, idx) => {
-                      const DiceComponent = DICE_IMAGE_BY_VALUE[val];
-                      if (!DiceComponent) return null;
-                      return (
-                        <View
-                          key={`${val}-${idx}`}
-                          style={{
-                            marginLeft: idx === 0 ? 0 : s(4),
-                          }}
-                        >
-                          <DiceComponent width={s(24)} height={s(24)} />
-                        </View>
-                      );
-                    })}
-                  </View>
-                ) : (
-                  <Text
-                    style={{
-                      fontSize: s(12),
-                      color: '#262626',
-                      fontWeight: '600',
-                    }}
-                  >
-                    No upcoming dice
-                  </Text>
-                )}
-              </View>
+              <View
+  style={{
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: s(4),
+  }}
+>
+  <Text
+    style={{
+      fontSize: s(11),
+      color: '#444',
+      fontWeight: '600',
+    }}
+  >
+    {bluePlayer?.lastMovedAt
+      ? new Date(
+          bluePlayer.lastMovedAt,
+        ).toLocaleDateString(
+          'en-GB',
+          {
+            day: '2-digit',
+            month: 'short',
+            hour: '2-digit',
+            minute: '2-digit',
+            second: '2-digit',
+          },
+        )
+      : '—'}
+  </Text>
+</View>
             </>
           ) : (
             <View
@@ -1269,49 +1912,160 @@ export default function MyBoardScreen(): React.ReactElement {
               >
                 Player Awaiting
               </Text>
+
               <Text
                 style={{
                   fontSize: s(12),
-                  color: '#262626',
+                  color: '#000000',
                   marginTop: s(4),
                 }}
               >
-                No upcoming
+                No upcoming dice
               </Text>
             </View>
           )}
         </View>
+{/* RIGHT: big active dice (tap) + small dice */}
+{(() => {
+  if (!bluePlayer) {
+    return (
+      <Text
+        style={{
+          top: s(26),
+          fontSize: s(13),
+          color: '#444',
+          fontWeight: '700',
+        }}
+      >
+        No Dice
+      </Text>
+    );
+  }
 
-        {/* DICE */}
-        {bluePlayer ? (
-          (() => {
-            const diceValue = diceRows.find(
-              r => String(r.playerId) === String(bluePlayer?.playerId),
-            )?.diceValue;
-            
-            if (diceValue != null && DICE_IMAGE_BY_VALUE[diceValue]) {
-              const DiceComponent = DICE_IMAGE_BY_VALUE[diceValue];
-              return <DiceComponent width={s(36)} height={s(36)} />;
-            }
-            return <Text style={{ fontSize: s(14), color: '#444', fontWeight: '800' }}>No Dice</Text>;
-          })()
-        ) : (
-          <Text
-            style={{
-              fontSize: s(12),
-              color: '#262626',
-              fontWeight: '600',
-            }}
-          >
-            No dice
-          </Text>
-        )}
-      </View>
+  const allMyDice = [...diceRows]
+    .filter(
+      r =>
+        String(r.playerId) === String(myFlmId) &&
+        r.diceValue != null,
+    )
+    .sort((a, b) => {
+      const at = a.rolledAt
+        ? new Date(a.rolledAt).getTime()
+        : 0;
+
+      const bt = b.rolledAt
+        ? new Date(b.rolledAt).getTime()
+        : 0;
+
+      return at - bt;
+    });
+
+  const activeDiceRow = allMyDice[0] || null;
+
+  const active =
+    activeDiceRow?.diceValue == null
+      ? null
+      : Number(activeDiceRow.diceValue);
+
+  const activeUploadId =
+    activeDiceRow?.uploadId || '';
+
+  const smallDice = allMyDice
+    .slice(1, 3)
+    .map(d =>
+      d.diceValue == null
+        ? null
+        : Number(d.diceValue),
+    )
+    .filter(v => v != null);
+
+  if (
+    active == null ||
+    !DICE_IMAGE_BY_VALUE[active]
+  ) {
+    return (
+      <Text
+        style={{
+          top: s(26),
+          fontSize: s(13),
+          color: '#444',
+          fontWeight: '700',
+        }}
+      >
+        No Dice
+      </Text>
+    );
+  }
+
+  const ActiveDiceComponent =
+    DICE_IMAGE_BY_VALUE[active];
+
+  return (
+    <View
+      style={{
+        flexDirection: 'row',
+        alignItems: 'flex-start',
+        justifyContent: 'flex-end',
+        flex: 1,
+        gap: s(8),
+        paddingTop: s(4),
+      }}
+    >
+      {/* SMALL DICE */}
+      {smallDice.length > 0 && (
+        <View
+          style={{
+            flexDirection: 'row',
+            alignItems: 'flex-start',
+            gap: s(5),
+            marginTop: s(2),
+          }}
+        >
+          {smallDice.map((v, idx) => {
+            const DiceComponent =
+              DICE_IMAGE_BY_VALUE[v as number];
+
+            if (!DiceComponent) return null;
+
+            return (
+              <DiceComponent
+                key={`${v}-${idx}`}
+                width={24}
+                height={24}
+              />
+            );
+          })}
+        </View>
+      )}
+
+      {/* BIG DICE */}
+      <TouchableOpacity
+        activeOpacity={0.8}
+        onPress={() => {
+          handleDiceSelection(
+            active,
+            activeUploadId,
+          );
+        }}
+      >
+        <ActiveDiceComponent
+          width={
+            currentDiceValue ? 54 : 46
+          }
+          height={
+            currentDiceValue ? 54 : 46
+          }
+        />
+      </TouchableOpacity>
+    </View>
+  );
+})()}
+        </View>
       <View
         style={{
           position: 'relative',
-          left: s(220),
-          bottom: s(80),
+          left: s(210),
+          bottom: s(0),
         }}
       >
         <Text style={{ color: 'white' }}>
@@ -1340,6 +2094,15 @@ export default function MyBoardScreen(): React.ReactElement {
             : '--'}
         </Text>
       </View>
+      <Chat
+  visible={showChat}
+  onClose={() => setShowChat(false)}
+  boardId={boardId}
+  playerId={myFlmId || ''}
+  playerName={user?.name || 'Player'}
+  teamName={bluePlayer?.teamName || ''}
+  userId={user?.id}
+/>
     </SafeAreaView>
   );
 }
@@ -1349,6 +2112,7 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#000',
   },
+
   dice: {
     position: 'relative',
     flexDirection: 'row',
@@ -1459,8 +2223,8 @@ const styles = StyleSheet.create({
   },
 
   teamName: {
-    width: '35%',
-    color: '#8a8a8a',
+    width: '50%',
+    color: '#272727',
     fontSize: s(12),
     fontWeight: '600',
     textAlign: 'center',
@@ -1499,10 +2263,11 @@ const styles = StyleSheet.create({
   },
 
   badgeLabel: {
-    backgroundColor: '#2563eb',
+    backgroundColor: '#245abd',
     paddingHorizontal: s(6),
     paddingVertical: s(2),
-    borderRadius: s(4),
+    borderRadius: s(12),
+    zIndex: 10,
   },
 
   badgeText: {
@@ -1536,8 +2301,8 @@ const styles = StyleSheet.create({
     left: 0,
     width: '100%',
     height: '100%',
-    zIndex: 30,
-    elevation: 50,
+    zIndex: 100,
+    elevation: 100,
   },
 
   boardPawn: {
@@ -1571,7 +2336,7 @@ const styles = StyleSheet.create({
   fab: {
     position: 'absolute',
     right: s(26),
-    bottom: s(80),
+    bottom: s(0),
     width: s(56),
     height: s(56),
     borderRadius: s(28),
@@ -1585,7 +2350,7 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.3,
     shadowRadius: s(4),
     shadowOffset: { width: 0, height: s(2) },
-    zIndex: 100,  
+    zIndex: 100,
   },
 
   playerNameTag: {
@@ -1614,5 +2379,5 @@ const styles = StyleSheet.create({
     width: s(16),
     height: s(16),
     resizeMode: 'contain',
-  }
+  },
 });

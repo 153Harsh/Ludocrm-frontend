@@ -269,11 +269,11 @@ const showAlert = (
     }
   };
 
-  const changeDateBy = (days: number) => {
-    const newDate = selectedDate ? new Date(selectedDate) : new Date();
-    newDate.setDate(newDate.getDate() + days);
-    setSelectedDate(newDate);
-  };
+const changeDateBy = (days: number) => {
+  const newDate = selectedDate ? new Date(selectedDate) : new Date();
+  newDate.setDate(newDate.getDate() + days);
+  setSelectedDate(newDate);
+};
 
   const onDateChange = (event: any, date?: Date) => {
     if (Platform.OS === 'android') setShowDatePicker(false);
@@ -286,12 +286,13 @@ const showAlert = (
   const openDatePicker = () => {
     if (Platform.OS === 'android') {
       DateTimePickerAndroid.open({
-        value: selectedDate || new Date(),
-        mode: 'date',
-        onChange: (_event: any, date?: Date) => {
-          if (date) setSelectedDate(date);
-        },
-      });
+  value: selectedDate || new Date(),
+  mode: 'date',
+  maximumDate: new Date(), // ADD THIS
+  onChange: (_event: any, date?: Date) => {
+    if (date) setSelectedDate(date);
+  },
+});
     } else {
       setShowDatePicker(true);
     }
@@ -455,7 +456,8 @@ const showAlert = (
       </View>
     );
   };
-
+const isToday =
+  selectedDate?.toDateString() === new Date().toDateString();
   return (
     <View style={styles.container}>
       <Image
@@ -550,9 +552,12 @@ const showAlert = (
                   </Text>
                 </TouchableOpacity>
                 <TouchableOpacity
-                  onPress={() => changeDateBy(1)}
-                  style={styles.dateBtn}
-                >
+  onPress={() => !isToday && changeDateBy(1)}
+  style={[
+    styles.dateBtn,
+    isToday && { opacity: 0.4 }
+  ]}
+>
                   <Icon name="chevron-right" size={s(20)} color="#333" />
                 </TouchableOpacity>
               </View>
@@ -675,6 +680,7 @@ const showAlert = (
                 value={selectedDate || new Date()}
                 mode="date"
                 display="spinner"
+                maximumDate={new Date()}
                 onChange={(_event: any, date?: Date) => {
                   if (date) setSelectedDate(date);
                 }}
@@ -878,7 +884,7 @@ alertButtonText: {
     borderRadius: s(20),
   },
   dateText: { color: '#333', fontWeight: 'bold', fontSize: s(11) },
-  tableBorder: { borderWidth: 2, borderColor: 'rgba(255,255,255,0.7)',borderRadius:20 },
+  tableBorder: { borderWidth: 2, borderColor: 'rgba(255,255,255,0.7)',borderRadius:20 ,overflow:'hidden'},
   tableContainer: { paddingHorizontal: s(8), paddingVertical: s(8),borderTopRightRadius:20,borderTopLeftRadius:18 },
   tableHeader: {
     flexDirection: 'row',
@@ -915,10 +921,7 @@ alertButtonText: {
   row: {
     flexDirection: 'row',
     alignItems: 'center',
-    // paddingHorizontal: s(4),
     paddingVertical: s(6),
-    borderBottomLeftRadius:20,
-    borderBottomRightRadius:20
   },
   nameCell: {
     color: '#FFF',

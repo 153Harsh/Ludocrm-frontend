@@ -1,13 +1,16 @@
 import React, { useState } from "react";
 import {
   ActivityIndicator,
+  KeyboardAvoidingView,
+  Platform,
+  ScrollView,
   View,
   Text,
   TextInput,
   TouchableOpacity,
   StyleSheet,
   Image,
-  Dimensions,
+  useWindowDimensions,
 } from "react-native";
 import LinearGradient from "react-native-linear-gradient";
 import Icon from "react-native-vector-icons/MaterialIcons";
@@ -17,33 +20,55 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../App';
 import { API_BASE_URL, authHeaders } from '../api';
 import { useAuth } from './AuthContext';
-const { width: W, height: H } = Dimensions.get('window');
-const s = (size: number) => (W / 390) * size;
+
+const clamp = (value: number, min: number, max: number) =>
+  Math.min(Math.max(value, min), max);
+
 const LoginScreen = () => {
+  const { width, height } = useWindowDimensions();
   const [passwordVisible, setPasswordVisible] = useState(false);
   const [userId, setUserId] = useState('');
   const [password, setPassword] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const { setSession } = useAuth();
-const [alertConfig, setAlertConfig] = useState({
-  visible: false,
-  title: '',
-  message: '',
-  type: 'success',
-});
-const showAlert = (
-  title: string,
-  message: string,
-  type: 'success' | 'error' | 'warning' = 'success',
-) => {
-  setAlertConfig({
-    visible: true,
-    title,
-    message,
-    type,
+  const [alertConfig, setAlertConfig] = useState({
+    visible: false,
+    title: '',
+    message: '',
+    type: 'success',
   });
-};
+  const showAlert = (
+    title: string,
+    message: string,
+    type: 'success' | 'error' | 'warning' = 'success',
+  ) => {
+    setAlertConfig({
+      visible: true,
+      title,
+      message,
+      type,
+    });
+  };
+
+  // Responsive scaling based on screen dimensions
+  const scale = (size: number) => (width / 390) * size;
+  const isSmallScreen = width < 360;
+  const isTablet = width >= 768;
+  const isShortScreen = height < 700;
+  const isLandscape = width > height;
+
+  // Scaled dimensions
+  const fieldHeight = clamp(scale(50), isSmallScreen ? 44 : 46, isTablet ? 58 : 56);
+  const fieldFontSize = clamp(scale(18), isSmallScreen ? 14 : 15, 18);
+  const cardPadding = clamp(scale(24), isSmallScreen ? 16 : 18, isTablet ? 32 : 28);
+  const fieldGap = clamp(scale(12), 10, isTablet ? 16 : 15);
+  const borderRadius = clamp(scale(20), 14, 24);
+
+  // Card width responsive
+  const baseCardWidth = Math.min(width - 32, isTablet ? 500 : 430);
+  const cardWidth = isLandscape && height < 500 ? Math.min(width - 32, 550) : baseCardWidth;
+
   const handleLogin = async () => {
     const trimmedUserId = userId.trim();
 
@@ -94,104 +119,190 @@ const showAlert = (
       colors={["#0B132B", "#1C2541"]}
       style={styles.container}
     >
-      <Image
-        source={bgImg}
-        style={{ position: "absolute", width: "100%", height: "100%", resizeMode:"cover" }}
-      />
-      <LinearGradient
-        colors={["#7F4BE2", "#9F6BFF"]}
-        style={styles.card}
-      >
-        <TextInput
-          placeholder="MR ID / User ID"
-          placeholderTextColor="#ddd"
-          style={styles.input}
-          value={userId}
-          onChangeText={setUserId}
-          autoCapitalize="characters"
-          autoCorrect={false}
+      <View style={styles.bgImageContainer} pointerEvents="none">
+        <Image
+          source={bgImg}
+          style={styles.bgImage}
         />
+      </View>
+      <KeyboardAvoidingView
+        style={styles.keyboardView}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        keyboardVerticalOffset={Platform.OS === 'android' ? 0 : 0}
+      >
+        <ScrollView
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={[
+            styles.scrollContent,
+            {
+              minHeight: height,
+              paddingHorizontal: clamp(scale(16), 16, 28),
+              paddingVertical: isShortScreen ? scale(24) : scale(36),
+            },
+          ]}
+        >
+          <LinearGradient
+            colors={["#7F4BE2", "#9F6BFF"]}
+            style={[
+              styles.card,
+              {
+                width: cardWidth,
+                padding: cardPadding,
+                borderRadius: borderRadius,
+                gap: fieldGap,
+              },
+            ]}
+          >
+            <TextInput
+              placeholder="MR ID / User ID"
+              placeholderTextColor="#ddd"
+              style={[
+                styles.input,
+                {
+                  height: fieldHeight,
+                  fontSize: fieldFontSize,
+                  paddingHorizontal: clamp(scale(12), isSmallScreen ? 10 : 12, 16),
+                },
+              ]}
+              value={userId}
+              onChangeText={setUserId}
+              autoCapitalize="characters"
+              autoCorrect={false}
+              returnKeyType="next"
+            />
 
-
-        <View style={styles.passwordContainer}>
-          <TextInput
-            placeholder="Password"
-            placeholderTextColor="#ddd"
-            secureTextEntry={!passwordVisible}
-            style={styles.passwordInput}
-            value={password}
-            onChangeText={setPassword}
-            autoCapitalize="none"
-            autoCorrect={false}
-          />
-          <TouchableOpacity
-            onPress={() => setPasswordVisible(!passwordVisible)}
+            <View
+              style={[
+                styles.passwordContainer,
+                {
+                  height: fieldHeight,
+                  paddingHorizontal: clamp(scale(12), isSmallScreen ? 10 : 12, 16),
+                },
+              ]}
+            >
+              <TextInput
+                placeholder="Password"
+                placeholderTextColor="#ddd"
+                secureTextEntry={!passwordVisible}
+                style={[styles.passwordInput, { fontSize: fieldFontSize }]}
+                value={password}
+                onChangeText={setPassword}
+                autoCapitalize="none"
+                autoCorrect={false}
+                returnKeyType="done"
+                onSubmitEditing={handleLogin}
+              />
+              <TouchableOpacity
+                onPress={() => setPasswordVisible(!passwordVisible)}
+                hitSlop={{ top: 10, right: 10, bottom: 10, left: 10 }}
+              >
+                <Icon
+                  name={passwordVisible ? "visibility-off" : "visibility"}
+                  size={clamp(scale(20), 18, 22)}
+                  color="#ddd"
+                />
+              </TouchableOpacity>
+            </View>
+            <TouchableOpacity
+              style={[
+                styles.button,
+                {
+                  height: fieldHeight,
+                  minWidth: clamp(scale(136), 124, 160),
+                  paddingHorizontal: clamp(scale(18), isSmallScreen ? 14 : 16, 24),
+                  marginTop: isLandscape ? clamp(scale(4), 2, 8) : clamp(scale(8), 4, 12),
+                },
+                isSubmitting && styles.buttonDisabled,
+              ]}
+              onPress={handleLogin}
+              disabled={isSubmitting}
+            >
+              {isSubmitting ? (
+                <ActivityIndicator color="#fff" />
+              ) : (
+                <Text
+                  style={[
+                    styles.buttonText,
+                    { fontSize: clamp(scale(18), 16, 18) },
+                  ]}
+                >
+                  Login
+                </Text>
+              )}
+            </TouchableOpacity>
+          </LinearGradient>
+        </ScrollView>
+      </KeyboardAvoidingView>
+      {alertConfig.visible && (
+        <View style={styles.alertOverlay}>
+          <View
+            style={[
+              styles.alertBox,
+              {
+                width: Math.min(width - 40, isTablet ? 420 : 360),
+                paddingHorizontal: clamp(scale(22), isSmallScreen ? 16 : 18, isTablet ? 28 : 26),
+                paddingVertical: clamp(scale(22), isSmallScreen ? 16 : 18, isTablet ? 28 : 26),
+                borderRadius: clamp(scale(24), 18, 28),
+                gap: clamp(scale(12), 10, 16),
+              },
+              alertConfig.type === 'success' && styles.successAlert,
+              alertConfig.type === 'error' && styles.errorAlert,
+              alertConfig.type === 'warning' && styles.warningAlert,
+            ]}
           >
             <Icon
-              name={passwordVisible ? "visibility-off" : "visibility"}
-              size={20}
-              color="#ddd"
+              name={
+                alertConfig.type === 'success'
+                  ? 'check-circle'
+                  : alertConfig.type === 'error'
+                  ? 'error'
+                  : 'warning'
+              }
+              size={clamp(scale(45), isSmallScreen ? 32 : 36, 50)}
+              color="white"
             />
-          </TouchableOpacity>
+
+            <Text
+              style={[
+                styles.alertTitle,
+                { fontSize: clamp(scale(22), isSmallScreen ? 16 : 18, 24) },
+              ]}
+            >
+              {alertConfig.title}
+            </Text>
+
+            <Text
+              style={[
+                styles.alertMessage,
+                { fontSize: clamp(scale(15), isSmallScreen ? 12 : 13, 16) },
+              ]}
+            >
+              {alertConfig.message}
+            </Text>
+
+            <TouchableOpacity
+              style={[
+                styles.alertButton,
+                {
+                  paddingHorizontal: clamp(scale(30), 24, 40),
+                  paddingVertical: clamp(scale(10), 8, 12),
+                },
+              ]}
+              onPress={() =>
+                setAlertConfig(prev => ({
+                  ...prev,
+                  visible: false,
+                }))
+              }
+            >
+              <Text style={[styles.alertButtonText, { fontSize: clamp(scale(15), 13, 17) }]}>
+                OK
+              </Text>
+            </TouchableOpacity>
+          </View>
         </View>
-        <TouchableOpacity
-          style={[styles.button, isSubmitting && styles.buttonDisabled]}
-          onPress={handleLogin}
-          disabled={isSubmitting}
-        >
-          {isSubmitting ? (
-            <ActivityIndicator color="#fff" />
-          ) : (
-            <Text style={styles.buttonText}>Login</Text>
-          )}
-        </TouchableOpacity>
-      </LinearGradient>
-      {alertConfig.visible && (
-  <View style={styles.alertOverlay}>
-    <View
-      style={[
-        styles.alertBox,
-        alertConfig.type === 'success' && styles.successAlert,
-        alertConfig.type === 'error' && styles.errorAlert,
-        alertConfig.type === 'warning' && styles.warningAlert,
-      ]}
-    >
-      <Icon
-        name={
-          alertConfig.type === 'success'
-            ? 'check-circle'
-            : alertConfig.type === 'error'
-            ? 'error'
-            : 'warning'
-        }
-        size={45}
-        color="white"
-      />
-
-      <Text style={styles.alertTitle}>
-        {alertConfig.title}
-      </Text>
-
-      <Text style={styles.alertMessage}>
-        {alertConfig.message}
-      </Text>
-
-      <TouchableOpacity
-        style={styles.alertButton}
-        onPress={() =>
-          setAlertConfig(prev => ({
-            ...prev,
-            visible: false,
-          }))
-        }
-      >
-        <Text style={styles.alertButtonText}>
-          OK
-        </Text>
-      </TouchableOpacity>
-    </View>
-  </View>
-)}
+      )}
     </LinearGradient>
   );
 };
@@ -201,6 +312,24 @@ export default LoginScreen;
 const styles = StyleSheet.create<Record<string, any>>({
   container: {
     flex: 1,
+  },
+  bgImageContainer: {
+    ...StyleSheet.absoluteFill,
+  },
+  bgImage: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    resizeMode: 'cover',
+    height: '100%',
+  },
+  keyboardView: {
+    flex: 1,
+  },
+  scrollContent: {
+    flexGrow: 1,
     alignItems: "center",
     justifyContent: "center",
   },
@@ -211,58 +340,43 @@ const styles = StyleSheet.create<Record<string, any>>({
   },
   tagline: {
     color: "#ccc",
-    marginBottom: s(40),
+    marginBottom: 40,
   },
   card: {
-    width: "90%",
-    height: "30%",
-    marginTop: "12%",
-    padding: s(25),
-    borderRadius: 20,
     alignItems: "center",
     justifyContent: "center",
-      shadowColor: "#000",
-      shadowOffset: {
-        width: 0,
-        height: 2,
-      },
-      shadowOpacity: 0.25,
-      shadowRadius: 3.84,
-      elevation: 5,
+    shadowColor: "#000",
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.25,
+    shadowRadius: 3.84,
+    elevation: 5,
   },
   input: {
     backgroundColor: "rgba(255,255,255,0.15)",
     borderRadius: 12,
-    padding: s(12),
-    marginBottom: s(15),
-    height: s(50),
     width: "100%",
     color: "#fff",
-    fontSize: 18,
   },
   passwordContainer: {
-    height: s(50),
     flexDirection: "row",
     alignItems: "center",
     backgroundColor: "rgba(255,255,255,0.15)",
     borderRadius: 12,
-    paddingHorizontal: s(12),
-    marginBottom: s(20),
+    width: "100%",
   },
   passwordInput: {
     flex: 1,
     color: "#fff",
     paddingVertical: 12,
-    fontSize: 18,
   },
   button: {
     backgroundColor: "#1C2541",
-    padding: s(12),
     borderRadius: 10,
     alignItems: "center",
     justifyContent: "center",
-    height: s(50),
-    width: "40%",
   },
   buttonDisabled: {
     opacity: 0.7,
@@ -270,69 +384,47 @@ const styles = StyleSheet.create<Record<string, any>>({
   buttonText: {
     color: "#fff",
     fontWeight: "bold",
-    fontSize: 18,
   },
- alertOverlay: {
-  position: 'absolute',
-  top: 0,
-  left: 0,
-  right: 0,
-  bottom: 0,
-  backgroundColor: 'rgba(0,0,0,0.65)',
-  justifyContent: 'center',
-  alignItems: 'center',
-  zIndex: 999,
-},
-
-alertBox: {
-  width: '82%',
-  height: '20%',
-  borderRadius: 24,
-  paddingHorizontal: 25,
-  paddingVertical: 25,
-  alignItems: 'center',
-  borderWidth:2,
-  borderColor:'white'
-},
-
-successAlert: {
-  backgroundColor: '#000f84',
-},
-
-errorAlert: {
-  backgroundColor: '#000f84',
-},
-
-warningAlert: {
-  backgroundColor: '#1b339f',
-},
-
-alertTitle: {
-  color: 'white',
-  fontSize: 22,
-  fontWeight: 'bold',
-  marginTop: 12,
-},
-
-alertMessage: {
-  color: 'white',
-  fontSize: 15,
-  textAlign: 'center',
-  marginTop: 10,
-  lineHeight: 22,
-},
-
-alertButton: {
-  marginTop: 20,
-  backgroundColor: 'rgba(255,255,255,0.2)',
-  paddingHorizontal: 30,
-  paddingVertical: 10,
-  borderRadius: 15,
-},
-
-alertButtonText: {
-  color: 'white',
-  fontWeight: 'bold',
-  fontSize: 15,
-},
+  alertOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0,0,0,0.65)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 999,
+  },
+  alertBox: {
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#0050b2',
+  },
+  successAlert: {
+    backgroundColor: '#004293',
+  },
+  errorAlert: {
+    backgroundColor: '#004293',
+  },
+  warningAlert: {
+    backgroundColor: '#004293',
+  },
+  alertTitle: {
+    color: 'white',
+    fontWeight: 'bold',
+  },
+  alertMessage: {
+    color: 'white',
+    textAlign: 'center',
+    lineHeight: 22,
+  },
+  alertButton: {
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    borderRadius: 15,
+  },
+  alertButtonText: {
+    color: 'white',
+    fontWeight: 'bold',
+  },
 });
