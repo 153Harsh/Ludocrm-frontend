@@ -54,13 +54,20 @@ interface UploadEntry {
   mrZone?: string;
 }
 
-const TYPES = ['All Types', 'prescription', 'pob', 'camp'];
+const TYPES = ['All Types', 'Prescription', 'Pob', 'Camp','Conversion','Chemist Availability'];
+const STATUS_FILTERS = [
+  'All Status',
+  'approved',
+  'rejected',
+];
 
 const UploadsScreen = () => {
   const { user } = useAuth();
   const isFlm = user?.role?.toLowerCase() === 'flm';
 
   const [filter, setFilter] = useState('All Types');
+  const [statusFilter, setStatusFilter] = useState('All Status');
+const [showStatusDropdown, setShowStatusDropdown] = useState(false);
   const [showDropdown, setShowDropdown] = useState(false);
   const [btnLayout, setBtnLayout] = useState<LayoutRectangle | null>(null);
   const [data, setData] = useState<UploadEntry[]>([]);
@@ -89,7 +96,7 @@ const UploadsScreen = () => {
   useEffect(() => {
     fetchUploads();
     return () => abortRef.current?.abort();
-  }, [selectedDate, filter]);
+}, [selectedDate, filter, statusFilter]);
 
   const [alertVisible, setAlertVisible] = useState(false);
   const [alertTitle, setAlertTitle] = useState('');
@@ -126,8 +133,13 @@ const UploadsScreen = () => {
       const dateParam = selectedDate
         ? `date=${selectedDate.toISOString().split('T')[0]}`
         : '';
-      const typeParam = filter !== 'All Types' ? `type=${filter}` : '';
-      const query = [dateParam, typeParam].filter(Boolean).join('&');
+      const typeParam =
+  filter !== 'All Types'
+    ? `type=${filter.toLowerCase()}`
+    : '';
+     const query = [dateParam, typeParam]
+  .filter(Boolean)
+  .join('&');
       const qs = query ? `?${query}` : '';
 
       if (isFlm) {
@@ -136,24 +148,43 @@ const UploadsScreen = () => {
           { signal },
         );
         const json = await res.json();
+        console.log('data',json)
         setData((json.data || []).map(mapUpload));
       } else {
-        const [pending, approved, rejected] = await Promise.all([
-          fetch(`${API_BASE_URL}/api/mr/${managerId}/uploads/pending${qs}`, {
-            signal,
-          }).then(r => r.json()),
-          fetch(`${API_BASE_URL}/api/mr/${managerId}/uploads/approved${qs}`, {
-            signal,
-          }).then(r => r.json()),
-          fetch(`${API_BASE_URL}/api/mr/${managerId}/uploads/rejected${qs}`, {
-            signal,
-          }).then(r => r.json()),
-        ]);
-        setData([
-          ...(pending.data || []).map(mapUpload),
-          ...(approved.data || []).map(mapUpload),
-          ...(rejected.data || []).map(mapUpload),
-        ]);
+        if (statusFilter === 'approved') {
+  const approved = await fetch(
+    `${API_BASE_URL}/api/mr/${managerId}/uploads/approved${qs}`,
+    { signal },
+  ).then(r => r.json());
+
+  setData((approved.data || []).map(mapUpload));
+}
+else if (statusFilter === 'rejected') {
+  const rejected = await fetch(
+    `${API_BASE_URL}/api/mr/${managerId}/uploads/rejected${qs}`,
+    { signal },
+  ).then(r => r.json());
+
+  setData((rejected.data || []).map(mapUpload));
+}
+else {
+  const [approved, rejected] = await Promise.all([
+    fetch(
+      `${API_BASE_URL}/api/mr/${managerId}/uploads/approved${qs}`,
+      { signal },
+    ).then(r => r.json()),
+
+    fetch(
+      `${API_BASE_URL}/api/mr/${managerId}/uploads/rejected${qs}`,
+      { signal },
+    ).then(r => r.json()),
+  ]);
+
+  setData([
+    ...(approved.data || []).map(mapUpload),
+    ...(rejected.data || []).map(mapUpload),
+  ]);
+}
       }
     } catch (error: any) {
       if (error?.name !== 'AbortError')
@@ -161,7 +192,13 @@ const UploadsScreen = () => {
     } finally {
       if (!signal.aborted) setLoading(false);
     }
-  }, [selectedDate, filter, isFlm, managerId]);
+}, [
+  selectedDate,
+  filter,
+  statusFilter,
+  isFlm,
+  managerId,
+]);
 
   const mapUpload = (item: any): UploadEntry => ({
     id: item.id,
@@ -194,13 +231,46 @@ const UploadsScreen = () => {
   });
 
   const getImages = (uploadImage: any): string[] => {
+    if (!uploadImage) return [];
+
+    // Backend might send:
+    // 1) JSON string like '["/path1","/path2"]'
+    // 2) Single url string like '/path1.png'
+    // 3) Already-parsed array/object
+    // JSON.parse can throw on non-JSON strings, so only parse when it looks like JSON.
     try {
-      const parsed =
-        typeof uploadImage === 'string' ? JSON.parse(uploadImage) : uploadImage;
-      const arr = Array.isArray(parsed) ? parsed : [parsed];
+      if (typeof uploadImage === 'string') {
+        const trimmed = uploadImage.trim();
+
+        // If it looks like JSON, parse it; otherwise treat it as a single path/URL.
+        if (
+          (trimmed.startsWith('[') && trimmed.endsWith(']')) ||
+          (trimmed.startsWith('{') && trimmed.endsWith('}'))
+        ) {
+          const parsed = JSON.parse(trimmed);
+          const arr = Array.isArray(parsed) ? parsed : [parsed];
+          return arr.filter(Boolean).map((p: string) => `${API_BASE_URL}${p}`);
+        }
+
+        // Sometimes backend might return comma-separated paths.
+        if (trimmed.includes(',')) {
+          const parts = trimmed
+            .split(',')
+            .map(s => s.trim())
+            .filter(Boolean);
+          return parts.map(p => `${API_BASE_URL}${p}`);
+        }
+
+        return [`${API_BASE_URL}${trimmed}`];
+      }
+
+      const arr = Array.isArray(uploadImage) ? uploadImage : [uploadImage];
       return arr.filter(Boolean).map((p: string) => `${API_BASE_URL}${p}`);
-    } catch {
-      return uploadImage ? [`${API_BASE_URL}${uploadImage}`] : [];
+    } catch (e) {
+      console.error('getImages JSON parse failed. payload:', uploadImage, e);
+      return typeof uploadImage === 'string'
+        ? [`${API_BASE_URL}${uploadImage}`]
+        : [];
     }
   };
 
@@ -332,7 +402,7 @@ const changeDateBy = (days: number) => {
             <Text style={styles.cell}>{item.type}</Text>
             <View style={styles.diceCell}>
               <View style={styles.diceCircle}>
-                <Text style={styles.diceText}>{item.diceValue}</Text>
+                <Text style={styles.diceText}>{item.points}</Text>
               </View>
             </View>
             <Text style={styles.cell}>{item.date}</Text>
@@ -483,9 +553,62 @@ const isToday =
               end={{ x: 1, y: 0 }}
               style={styles.topBar}
             >
-              <Text style={styles.headerTitle}>
-                {isFlm ? 'Team Uploads' : 'All Uploads'}
-              </Text>
+              <TouchableOpacity
+                style={styles.filterBtn}
+                onLayout={e => setBtnLayout(e.nativeEvent.layout)}
+                onPress={() => setShowStatusDropdown(true)}
+              >
+                <Text style={styles.filterText}>{statusFilter}</Text>
+                <Icon name="arrow-drop-down" size={s(18)} color="#333" />
+              </TouchableOpacity>
+              <Modal
+                transparent
+                visible={showStatusDropdown}
+                onRequestClose={() => setShowStatusDropdown(false)}
+              >
+                <TouchableOpacity
+                  style={styles.modalOverlay}
+                  activeOpacity={1}
+                  onPress={() => setShowStatusDropdown(false)}
+                >
+                  {btnLayout && (
+                    <View
+                      style={[
+                        styles.dropdown,
+                        {
+                          position: 'absolute',
+                          top: btnLayout.y + btnLayout.height + s(8),
+                          left: '4%',
+                        },
+                      ]}
+                    >
+                      {STATUS_FILTERS.map(t => (
+                        <TouchableOpacity
+                          key={t}
+                          style={styles.dropdownItem}
+                          onPress={() => {
+                            setStatusFilter(t);
+                            setShowStatusDropdown(false);
+                          }}
+                        >
+                          <Text
+                            style={[
+                              styles.dropdownText,
+                              statusFilter === t && styles.dropdownTextActive,
+                            ]}
+                          >
+                            {t}
+                          </Text>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                  )}
+                </TouchableOpacity>
+              </Modal>
+
+
+
+
               <TouchableOpacity
                 style={styles.filterBtn}
                 onLayout={e => setBtnLayout(e.nativeEvent.layout)}
@@ -582,7 +705,7 @@ const isToday =
               <View style={styles.tableHeader}>
                 <Text style={styles.headerLabel}>MR NAME</Text>
                 <Text style={styles.headerLabelSm}>TYPE</Text>
-                <Text style={styles.headerLabelSm}>DICE</Text>
+                <Text style={styles.headerLabelSm}>POINTS</Text>
                 <Text style={styles.headerLabelSm}>DATE</Text>
                 <Text style={styles.headerLabelSm}>TIME</Text>
                 <Text style={styles.headerLabelIcon}>✓</Text>
@@ -779,9 +902,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: 'rgba(255,255,255,0.9)',
-    paddingHorizontal: s(10),
+    paddingHorizontal: s(4),
     paddingVertical: s(6),
     borderRadius: s(20),
+    maxWidth:s(105)
   },
   filterText: { color: '#666', fontSize: s(12), fontWeight: '600' },
   dateBadge: {
@@ -857,7 +981,7 @@ const styles = StyleSheet.create({
     elevation: 8,
   },
   dropdownItem: { paddingHorizontal: s(16), paddingVertical: s(10) },
-  dropdownText: { color: '#333', fontSize: s(14) },
+  dropdownText: { color: '#333', fontSize: s(14),textAlign:'center' },
   dropdownTextActive: { color: '#7149c8', fontWeight: 'bold' },
   emptyText: {
     color: '#FFF',

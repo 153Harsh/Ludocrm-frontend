@@ -125,11 +125,6 @@ const LoginScreen = () => {
           style={styles.bgImage}
         />
       </View>
-      <KeyboardAvoidingView
-        style={styles.keyboardView}
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        keyboardVerticalOffset={Platform.OS === 'android' ? 0 : 0}
-      >
         <ScrollView
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
@@ -233,40 +228,40 @@ const LoginScreen = () => {
             </TouchableOpacity>
           </LinearGradient>
         </ScrollView>
-      </KeyboardAvoidingView>
       {alertConfig.visible && (
         <View style={styles.alertOverlay}>
-          <View
+          <LinearGradient
+            colors={['#1c3b82','#1c3b82', '#000479']}
+            start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 0 }}
             style={[
               styles.alertBox,
               {
                 width: Math.min(width - 40, isTablet ? 420 : 360),
-                paddingHorizontal: clamp(scale(22), isSmallScreen ? 16 : 18, isTablet ? 28 : 26),
-                paddingVertical: clamp(scale(22), isSmallScreen ? 16 : 18, isTablet ? 28 : 26),
-                borderRadius: clamp(scale(24), 18, 28),
-                gap: clamp(scale(12), 10, 16),
+                paddingHorizontal: clamp(scale(24), isSmallScreen ? 18 : 20, isTablet ? 32 : 28),
+                paddingVertical: clamp(scale(28), isSmallScreen ? 22 : 24, isTablet ? 34 : 30),
+                borderRadius: clamp(scale(28), 20, 34),
               },
-              alertConfig.type === 'success' && styles.successAlert,
-              alertConfig.type === 'error' && styles.errorAlert,
-              alertConfig.type === 'warning' && styles.warningAlert,
             ]}
           >
-            <Icon
-              name={
-                alertConfig.type === 'success'
-                  ? 'check-circle'
-                  : alertConfig.type === 'error'
-                  ? 'error'
-                  : 'warning'
-              }
-              size={clamp(scale(45), isSmallScreen ? 32 : 36, 50)}
-              color="white"
-            />
+            <View style={styles.alertIconWrapper}>
+              <Icon
+                name={
+                  alertConfig.type === 'success'
+                    ? 'error'
+                    : alertConfig.type === 'error'
+                    ? 'error'
+                    : 'warning'
+                }
+                size={clamp(scale(34), isSmallScreen ? 28 : 32, 38)}
+                color="#f5365c"
+              />
+            </View>
 
             <Text
               style={[
                 styles.alertTitle,
-                { fontSize: clamp(scale(22), isSmallScreen ? 16 : 18, 24) },
+                { fontSize: clamp(scale(22), isSmallScreen ? 18 : 20, 24) },
               ]}
             >
               {alertConfig.title}
@@ -275,7 +270,7 @@ const LoginScreen = () => {
             <Text
               style={[
                 styles.alertMessage,
-                { fontSize: clamp(scale(15), isSmallScreen ? 12 : 13, 16) },
+                { fontSize: clamp(scale(15), isSmallScreen ? 13 : 14, 16) },
               ]}
             >
               {alertConfig.message}
@@ -285,8 +280,8 @@ const LoginScreen = () => {
               style={[
                 styles.alertButton,
                 {
-                  paddingHorizontal: clamp(scale(30), 24, 40),
-                  paddingVertical: clamp(scale(10), 8, 12),
+                  marginTop: clamp(scale(18), 14, 22),
+                  paddingVertical: clamp(scale(12), 10, 14),
                 },
               ]}
               onPress={() =>
@@ -300,7 +295,7 @@ const LoginScreen = () => {
                 OK
               </Text>
             </TouchableOpacity>
-          </View>
+          </LinearGradient>
         </View>
       )}
     </LinearGradient>
@@ -398,33 +393,44 @@ const styles = StyleSheet.create<Record<string, any>>({
   },
   alertBox: {
     alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#0050b2',
+    backgroundColor: '#0E1F4F',
+    borderWidth: 0,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.15,
+    shadowRadius: 30,
+    elevation: 12,
   },
-  successAlert: {
-    backgroundColor: '#004293',
-  },
-  errorAlert: {
-    backgroundColor: '#004293',
-  },
-  warningAlert: {
-    backgroundColor: '#004293',
+  alertIconWrapper: {
+    width: 84,
+    height: 84,
+    borderRadius: 50,
+    backgroundColor: '#fff',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 18,
   },
   alertTitle: {
     color: 'white',
-    fontWeight: 'bold',
+    fontWeight: '700',
+    textAlign: 'center',
+    marginBottom: 8,
   },
   alertMessage: {
-    color: 'white',
+    color: 'rgba(255,255,255,0.86)',
     textAlign: 'center',
     lineHeight: 22,
   },
   alertButton: {
-    backgroundColor: 'rgba(255,255,255,0.2)',
-    borderRadius: 15,
+    backgroundColor: '#ffffff',
+    borderRadius: 16,
+    minWidth: 140,
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: '100%',
   },
   alertButtonText: {
-    color: 'white',
-    fontWeight: 'bold',
+    color: '#0E1F4F',
+    fontWeight: '700',
   },
 });

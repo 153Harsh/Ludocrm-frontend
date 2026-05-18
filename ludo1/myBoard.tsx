@@ -21,7 +21,7 @@ import DiceFour from '../assets/dice4.png';
 import DiceFive from '../assets/dice5.png';
 import DiceSix from '../assets/dice6.png';
 import { useNavigation, } from '@react-navigation/native';
-import Chat from './chat';
+import Chat from '../ludo2/chat';
 import AlertModal, { AlertButton } from '../components/AlertModal';
 import Toast from 'react-native-toast-message';
 // import Sound from 'react-native-nitro-sound';
@@ -1693,49 +1693,49 @@ const perspectiveDiceRow =
       <View>
         {/* TOP: TEAMS GRID */}
         <View style={styles.teamsGrid}>
-          {players.map((player, index) => (
-            <View
-              key={player.playerId}
-              style={[
-                styles.teamCard,
-                player.playerId === myFlmId && styles.teamCardActive,
-              ]}
-            >
-              <View style={styles.numberBadge}>
-                <Text style={styles.numberText}>
-  {player.rank ?? index + 1}
-</Text>
-              </View>
-              <Text style={styles.teamName} numberOfLines={2}>
-                                    {(player.teamName || player.playerName).replace(
-                                      /([a-z])([A-Z])/g,
-                                      '$1\n$2',
-                                    )}
-                                  </Text>
-              <View style={styles.statsRow}>
-                <View style={styles.statItem}>
-                  <Image
-                    source={require('../assets/gameAssets/kill.png')}
-                    style={styles.statIcon}
-                  />
-                  <Text style={styles.statText}>{player.kills}</Text>
+                  {players.map((player, index) => (
+                    <View
+                      key={player.playerId}
+                      style={[
+                        styles.teamCard,
+                        player.playerId === myFlmId && styles.teamCardActive,
+                      ]}
+                    >
+                      <View style={styles.numberBadge}>
+                        <Text style={styles.numberText}>
+          {player.rank ?? index + 1}
+        </Text>
+                      </View>
+                      <Text style={styles.teamName} numberOfLines={2}>
+                                            {(player.teamName || player.playerName).replace(
+                                              /([a-z])([A-Z])/g,
+                                              '$1\n$2',
+                                            )}
+                                          </Text>
+                      <View style={styles.statsRow}>
+                        <View style={styles.statItem}>
+                          <Image
+                            source={require('../assets/gameAssets/kill.png')}
+                            style={styles.statIcon}
+                          />
+                          <Text style={styles.statText}>{player.kills}</Text>
+                        </View>
+                        <View style={styles.statItem}>
+                          <Image
+                            source={require('../assets/gameAssets/moves.png')}
+                            style={styles.statIcon}
+                          />
+                          <Text style={styles.statText}>{player.moves}</Text>
+                        </View>
+                      </View>
+                      {player.playerId === myFlmId && (
+                        <View style={styles.badgeLabel}>
+                          <Text style={styles.badgeText}>YOU</Text>
+                        </View>
+                      )}
+                    </View>
+                  ))}
                 </View>
-                <View style={styles.statItem}>
-                  <Image
-                    source={require('../assets/gameAssets/moves.png')}
-                    style={styles.statIcon}
-                  />
-                  <Text style={styles.statText}>{player.moves}</Text>
-                </View>
-              </View>
-              {player.playerId === myFlmId && (
-                <View style={styles.badgeLabel}>
-                  <Text style={styles.badgeText}>YOU</Text>
-                </View>
-              )}
-            </View>
-          ))}
-        </View>
 
         {/* TOP - RED */}
         <View style={styles.dice}>
@@ -1786,6 +1786,35 @@ const perspectiveDiceRow =
             source={require('../assets/gameAssets/ludo-board.png')}
             style={styles.boardImage}
           />
+
+
+          {/* BOARD VALUE MARKERS */}
+          {[
+            { value: '-1', positions: [[3, 8], [6, 3], [11, 6], [8, 11]] },
+            { value: '-6', positions: [[0, 7], [7, 0], [14, 7], [7, 14]] },
+            { value: '-3', positions: [[5, 6], [8, 5], [9, 8], [6, 9]] },
+          ].flatMap(item =>
+            item.positions.map(([col, row], index) => (
+              <View
+                key={`${item.value}-${col}-${row}-${index}`}
+                style={[
+                  styles.boardMarker,
+                  {
+                    left: GRID_LEFT + col * TILE_W,
+                    top: GRID_TOP + row * TILE_H,
+                    width: TILE_W,
+                    height: TILE_H,
+                  },
+                ]}
+              >
+                <Text style={styles.boardMarkerText}>
+                  {item.value}
+                </Text>
+              </View>
+            )),
+          )}
+
+
           <View style={styles.pawnLayer}>
             {renderPlayerNamesOnBoard()}
             {renderBasePawns()}
@@ -2132,6 +2161,18 @@ const perspectiveDiceRow =
 }
 
 const styles = StyleSheet.create({
+    boardMarker: {
+  position: 'absolute',
+  justifyContent: 'center',
+  alignItems: 'center',
+  zIndex: 20,
+},
+
+boardMarkerText: {
+  color: 'red',
+  fontSize: s(12),
+  fontWeight: '900',
+},
   container: {
     flex: 1,
     backgroundColor: '#000',
@@ -2286,7 +2327,7 @@ const styles = StyleSheet.create({
     fontSize: s(16),
   },
 
-  badgeLabel:
+   badgeLabel:
    {
     right:s(74),
     bottom:s(70),

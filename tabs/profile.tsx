@@ -17,6 +17,7 @@ import { useNavigation } from '@react-navigation/native';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import { useAuth } from '../auth/AuthContext';
 import { API_BASE_URL, authHeaders } from '../api';
+import AlertModal from '../components/AlertModal';
 
 const { width: W } = Dimensions.get('window');
 const s = (size: number) => (W / 390) * size;
@@ -83,24 +84,26 @@ export default function Profile() {
     if (activeTab === 'stats') fetchStats();
   }, [activeTab]);
 
-const [alertConfig, setAlertConfig] = useState({
-  visible: false,
-  title: '',
-  message: '',
-  type: 'success',
-});
+  const [alertVisible, setAlertVisible] = useState(false);
+  const [alertTitle, setAlertTitle] = useState<string>('');
+  const [alertMessage, setAlertMessage] = useState<string>('');
+  const [alertVariant, setAlertVariant] = useState<'info' | 'error' | 'confirm'>('info');
+  const closeAlert = () => setAlertVisible(false);
+
   const showAlert = (
-  title: string,
-  message: string,
-  type: 'success' | 'error' | 'warning' = 'success',
-) => {
-  setAlertConfig({
-    visible: true,
-    title,
-    message,
-    type,
-  });
-};
+    title: string,
+    message: string,
+    type: 'success' | 'error' | 'warning' = 'success',
+  ) => {
+    setAlertTitle(title);
+    setAlertMessage(message);
+
+    if (type === 'error') setAlertVariant('error');
+    else if (type === 'warning') setAlertVariant('confirm');
+    else setAlertVariant('info');
+
+    setAlertVisible(true);
+  };
   const fetchProfileImage = async () => {
     try {
       const res = await fetch(
@@ -155,12 +158,10 @@ const [alertConfig, setAlertConfig] = useState({
   };
 
 const handleLogout = () => {
-  setAlertConfig({
-    visible: true,
-    title: 'Logout',
-    message: 'Do you want to logout?',
-    type: 'warning',
-  });
+  setAlertTitle('Logout');
+  setAlertMessage('Do you want to logout?');
+  setAlertVariant('confirm');
+  setAlertVisible(true);
 };
 
   const pickProfileImage = async () => {
@@ -172,7 +173,7 @@ const handleLogout = () => {
         assetRepresentationMode: 'compatible',
       });
       if (result.didCancel) return;
-      if (result.errorCode) {
+  if (result.errorCode) {
         showAlert('Error', result.errorMessage || 'Unable to pick image.');
         return;
       }
@@ -202,7 +203,7 @@ const handleLogout = () => {
           ? `${API_BASE_URL}/profileImage/${json.imageName}`
           : json.imageUrl;
         setProfileUri(`${imageUrl}?t=${Date.now()}`);
-        showAlert('Success', 'Profile picture updated!');
+      showAlert('Success', 'Profile picture updated!');
       } else {
         showAlert('Error', json.message || 'Upload failed');
       }
@@ -585,88 +586,42 @@ const handleLogout = () => {
             )}
           </ScrollView>
         )}
-        {alertConfig.visible && (
-  <View style={styles.alertOverlay}>
-    <View
-      style={[
-        styles.alertBox,
-        alertConfig.type === 'success' && styles.successAlert,
-        alertConfig.type === 'error' && styles.errorAlert,
-        alertConfig.type === 'warning' && styles.warningAlert,
-      ]}
-    >
-      <Icon
-        name={
-          alertConfig.type === 'success'
-            ? 'check-circle'
-            : alertConfig.type === 'error'
-            ? 'error'
-            : 'warning'
-        }
-        size={45}
-        color="white"
-      />
-
-      <Text style={styles.alertTitle}>
-        {alertConfig.title}
-      </Text>
-
-      <Text style={styles.alertMessage}>
-        {alertConfig.message}
-      </Text>
-
-      <View
-  style={{
-    flexDirection: 'row',
-    gap: 12,
-    marginTop: 20,
-  }}
->
-  <TouchableOpacity
-    style={styles.alertButton}
-    onPress={() =>
-      setAlertConfig(prev => ({
-        ...prev,
-        visible: false,
-      }))
-    }
-  >
-    <Text style={styles.alertButtonText}>
-      Cancel
-    </Text>
-  </TouchableOpacity>
-
-  {alertConfig.title === 'Logout' && (
-    <TouchableOpacity
-      style={[
-        styles.alertButton,
-        {
-          backgroundColor: '#ff4444',
-        },
-      ]}
-      onPress={() => {
-        setAlertConfig(prev => ({
-          ...prev,
-          visible: false,
-        }));
-
-        setSession(null);
-
-        navigation.reset({
-          index: 0,
-          routes: [{ name: 'Welcome' }],
-        });
-      }}
-    >
-      <Text style={styles.alertButtonText}>
-        Logout
-      </Text>
-    </TouchableOpacity>
-  )}
-</View>
-    </View>
-  </View>
-)}
+        <AlertModal
+          visible={alertVisible}
+          title={alertTitle}
+          message={alertMessage}
+          variant={alertVariant === 'error' ? 'error' : alertVariant}
+          buttons={[
+            ...(alertTitle === 'Logout'
+              ? [
+                  {
+                    text: 'Cancel',
+                    style: 'cancel' as const,
+                    onPress: closeAlert,
+                  },
+                  {
+                    text: 'Logout',
+                    style: 'destructive' as const,
+                    onPress: () => {
+                      closeAlert();
+                      setSession(null);
+                      navigation.reset({
+                        index: 0,
+                        routes: [{ name: 'Welcome' }],
+                      });
+                    },
+                  },
+                ]
+              : [
+                  {
+                    text: 'OK',
+                    style: 'default' as const,
+                    onPress: closeAlert,
+                  },
+                ]),
+          ]}
+          onRequestClose={closeAlert}
+        />
       </SafeAreaView>
     </ImageBackground>
   );

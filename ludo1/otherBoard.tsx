@@ -46,7 +46,10 @@ const TILE_W = GRID_WIDTH / 15;
 const TILE_H = GRID_HEIGHT / 15;
 const PAWN_SIZE = Math.min(TILE_W, TILE_H) * 0.9;
 const PAWN_TIP = PAWN_SIZE * 0.86;
-const CREATOR_ID = 'S1101';
+// Creator/FLM id for boards filtering.
+// Must match `boards.creator` in MySQL.
+const CREATOR_ID = 'A1234';
+
 
 // ─── AREA TRACK DATA ───
 const DICE_IMAGE_BY_VALUE: Record<number, any> = {
@@ -379,6 +382,7 @@ const isBasePawn = (pawn: Pawn) => {
 const isCenterPawn = (pawn: Pawn) =>
   normalizePawnPosition(pawn.currentPosition) === 'finished';
 
+const deriveTeamDice=(allPlayersDice : any)=>{if(!Array.isArray(allPlayersDice))return[];const tm=new Map();for(const d of allPlayersDice){const k=d.teamId||d.playerId;if(!tm.has(k)||(d.rolledAt&&(!tm.get(k)?.rolledAt||new Date(d.rolledAt)>new Date(tm.get(k).rolledAt)))){tm.set(k,{...d,teamId:k});}}return Array.from(tm.values());};
 function positionToGrid(pos: string, color: string): [number, number] | null {
   if (!pos || pos === '0') return null;
 
@@ -431,29 +435,6 @@ export default function OtherBoardScreen(): ReactElement {
   const socketRef = useRef<Socket | null>(null);
   const pawnsRef = useRef<Pawn[]>([]);
   const [diceRows, setDiceRows] = useState<DiceByPlayerRow[]>([]);
-  const deriveTeamDice = (allPlayersDice: DiceByPlayerRow[]) => {
-    if (!Array.isArray(allPlayersDice)) return [];
-
-    const teamMap = new Map();
-
-    for (const d of allPlayersDice) {
-      const teamId = d.teamId || d.playerId;
-
-      if (
-        !teamMap.has(teamId) ||
-        (d.rolledAt &&
-          (!teamMap.get(teamId)?.rolledAt ||
-            new Date(d.rolledAt) > new Date(teamMap.get(teamId).rolledAt)))
-      ) {
-        teamMap.set(teamId, {
-          ...d,
-          teamId,
-        });
-      }
-    }
-
-    return Array.from(teamMap.values());
-  };
   // ─── DERIVED STATE ───
   const currentBoard = otherBoards[currentBoardIndex];
   const displayBoardId = currentBoard?.id || null;
@@ -669,7 +650,7 @@ export default function OtherBoardScreen(): ReactElement {
   useEffect(() => {
     if (!displayBoardId) return;
     setLoading(true);
-    fetchBoardState(displayBoardId).then(() => setLoading(false));
+    fetchBoardState(displayBoardId).finally(() => setLoading(false));
   }, [displayBoardId, fetchBoardState]);
 
   // ─── SOCKET CONNECTION ───
@@ -1279,6 +1260,66 @@ export default function OtherBoardScreen(): ReactElement {
             source={require('../assets/gameAssets/ludo-board.png')}
             style={styles.boardImage}
           />
+
+
+
+          {/* GRID DEBUGGER */}
+{/* <View pointerEvents="none" style={styles.gridDebugger}>
+  {Array.from({ length: 15 }).map((_, row) =>
+    Array.from({ length: 15 }).map((__, col) => (
+      <View
+        key={`${row}-${col}`}
+        style={[
+          styles.gridCell,
+          {
+            left: GRID_LEFT + col * TILE_W,
+            top: GRID_TOP + row * TILE_H,
+            width: TILE_W,
+            height: TILE_H,
+          },
+        ]}
+      >
+        <Text style={styles.gridText}>
+          {col},{row}
+        </Text>
+      </View>
+    )),
+  )}
+</View> */}
+{/* BOARD VALUE MARKERS */}
+{[
+  { value: '-1', positions: [[3, 8], [6, 3], [11, 6], [8, 11]] },
+  { value: '-6', positions: [[0, 7], [7, 0], [14, 7], [7, 14]] },
+  { value: '-3', positions: [[5, 6], [8, 5], [9, 8], [6, 9]] },
+].flatMap(item =>
+  item.positions.map(([col, row], index) => (
+    <View
+      key={`${item.value}-${col}-${row}-${index}`}
+      style={[
+        styles.boardMarker,
+        {
+          left: GRID_LEFT + col * TILE_W,
+          top: GRID_TOP + row * TILE_H,
+          width: TILE_W,
+          height: TILE_H,
+        },
+      ]}
+    >
+      <Text style={styles.boardMarkerText}>
+        {item.value}
+      </Text>
+    </View>
+  )),
+)}
+{/* CENTER LOCK */}
+<View style={styles.centerLockContainer}>
+  <Image
+    source={require('../assets/gameAssets/lock.png')}
+    style={styles.centerLock}
+  />
+</View>
+
+
           {/* PAWNS LAYER */}
           <View pointerEvents="none" style={styles.pawnLayer}>
             {renderBasePawns()}
@@ -1296,11 +1337,48 @@ export default function OtherBoardScreen(): ReactElement {
 
             return (
               <View
-                key={player.playerId}
-                style={[styles.baseNameContainer, positionStyle]}
-              >
-                <Text style={styles.teamName}>{player.playerName}</Text>
-              </View>
+  key={player.playerId}
+  style={[
+    styles.baseNameContainer,
+    positionStyle,
+    (player.color === 'green') && {
+      flexDirection: 'row-reverse',right:s(4),top:s(12)
+    },
+    (player.color === 'yellow') && {
+      flexDirection: 'row-reverse',right:s(4),bottom:s(12)
+    },
+    
+    (player.color === 'red') && {
+      left: s(6),top:s(12)
+    },
+    (player.color === 'blue') && {
+      left: s(6),bottom:s(12)
+    },
+
+  ]}
+>
+  <Image
+    source={require('../assets/gameAssets/pawn-white.png')}
+    style={styles.playerPawnIcon}
+  />
+
+  <Text style={[styles.teamName, positionStyle,
+    (player.color === 'red') && {
+      left: s(-4),top:s(2)
+    },
+    (player.color === 'blue') && {
+      left: s(-4),top:s(2)
+    },
+    (player.color === 'yellow') && {
+      left: s(-4),top:s(2)
+    },
+    (player.color === 'green') && {
+      left: s(-4),top:s(2)
+    },
+    ]}>
+    {player.playerName}
+  </Text>
+</View>
             );
           })}
         </View>
@@ -1369,11 +1447,70 @@ export default function OtherBoardScreen(): ReactElement {
 
 // ─── STYLES ───
 const styles = StyleSheet.create({
+  centerLockContainer: {
+  position: 'absolute',
+  left: GRID_LEFT + 6 * TILE_W,
+  top: GRID_TOP + 6 * TILE_H,
+  width: TILE_W * 3,
+  height: TILE_H * 3,
+  justifyContent: 'center',
+  alignItems: 'center',
+  zIndex: 15,
+  borderWidth:2,
+  backgroundColor:'rgba(228, 228, 228, 0.6)',
+  borderRadius:'50%',
+  borderColor:'rgb(152, 152, 152)'
+},
+
+centerLock: {
+  width: TILE_W * 2.2,
+  height: TILE_H * 2.2,
+  resizeMode: 'contain',
+},
+  boardMarker: {
+  position: 'absolute',
+  justifyContent: 'center',
+  alignItems: 'center',
+  zIndex: 20,
+},
+
+boardMarkerText: {
+  color: 'red',
+  fontSize: s(12),
+  fontWeight: '900',
+},
+
+  gridDebugger: {
+  ...StyleSheet.absoluteFill,
+  zIndex: 5,
+},
+
+gridCell: {
+  position: 'absolute',
+  borderWidth: 0.5,
+  borderColor: 'rgba(255,255,255,0.25)',
+  justifyContent: 'center',
+  alignItems: 'center',
+},
+
+gridText: {
+  fontSize: s(7),
+  color: '#000000',
+  fontWeight: '700',
+},
+
   container: {
     flex: 1,
     backgroundColor: '#000',
   },
+  playerPawnIcon: {
+  width: s(16),
+  height: s(16),
+  resizeMode: 'contain',
+  marginHorizontal: s(4),
+},
   baseNameContainer: {
+    flexDirection:'row',
     position: 'absolute',
     zIndex: 100,
   },

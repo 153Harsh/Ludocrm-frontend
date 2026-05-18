@@ -145,11 +145,13 @@ export default function UploadPrescriptionScreen() {
     (_, i) => String(i + 1),
   );
 
+  // Image count is always 1 for all activity types
   useEffect(() => {
-    setSelectedImages(current =>
-      Array.from({ length: imageCount }, (_, index) => current[index] || null),
-    );
-  }, [imageCount]);
+    // Keep single image slot always available
+    if (selectedImages.length !== 1) {
+      setSelectedImages([null]);
+    }
+  }, []);
 
   const updateField = (fieldName: string, value: string) => {
     setForm(current => ({
@@ -157,33 +159,8 @@ export default function UploadPrescriptionScreen() {
       [fieldName]: value,
     }));
 
-    const lowerType = selectedType.toLowerCase();
-
-    if (fieldName === 'brandName') {
-      const rule = BRAND_RULES[value] || { maxImages: 1, pointsPerImage: 0 };
-
-      // If brand changes, resize according to current type.
-      if (lowerType === 'pob' || lowerType === 'camp') {
-        setImageCount(1);
-        setSelectedImages([null]);
-      } else {
-        setImageCount(rule.maxImages);
-        setSelectedImages(Array.from({ length: rule.maxImages }, () => null));
-      }
-      return;
-    }
-
-    if (fieldName === 'noRxns') {
-      if (lowerType !== 'pob' && lowerType !== 'camp') {
-        const count = Number(value) || 0;
-        setImageCount(count);
-        setSelectedImages(Array.from({ length: count }, (_, i) => selectedImages[i] || null));
-      }
-      return;
-    }
-
-    // For other fields (including type changes via type dropdown UI handled elsewhere)
-    // no special resizing.
+    // No image count changes based on field updates
+    // Always keep single image upload
   };
   const resetForType = (typeName: string) => {
     setSelectedType(typeName);
@@ -196,14 +173,9 @@ export default function UploadPrescriptionScreen() {
       mobNo: form.mobNo,
     });
 
-    const lowerType = typeName.toLowerCase();
-    if (lowerType === 'pob' || lowerType === 'camp') {
-      setImageCount(1);
-      setSelectedImages([null]);
-    } else {
-      setImageCount(0);
-      setSelectedImages([]);
-    }
+    // Always show single image for all types
+    setImageCount(1);
+    setSelectedImages([null]);
   };
 
   const loadInitialData = useCallback(async () => {
@@ -262,20 +234,20 @@ export default function UploadPrescriptionScreen() {
 
       if (result.errorCode) {
         showAlert(
-  'Image Picker Error',
-  result.errorMessage || 'Unable to pick image.',
-  'error',
-);
+          'Image Picker Error',
+          result.errorMessage || 'Unable to pick image.',
+          'error',
+        );
         return;
       }
 
       const asset = result.assets?.[0];
       if (!asset?.uri) {
-       showAlert(
-  'Image Picker Error',
-  'No image was returned from the picker.',
-  'warning',
-);
+        showAlert(
+          'Image Picker Error',
+          'No image was returned from the picker.',
+          'warning',
+        );
         return;
       }
 
@@ -324,10 +296,10 @@ export default function UploadPrescriptionScreen() {
 
     if (!user?.id) {
       showAlert(
-  'Session Expired',
-  'Please login again before uploading.',
-  'warning',
-);
+        'Session Expired',
+        'Please login again before uploading.',
+        'warning',
+      );
       return false;
     }
 
@@ -347,14 +319,14 @@ export default function UploadPrescriptionScreen() {
     if (!form.scCode.trim()) {
       missing.push('scCode');
     }
-  if (form.mobNo && form.mobNo.length !== 10) {
-  showAlert(
-    'Invalid Number',
-    'Mobile number must be 10 digits',
-    'warning',
-  );
-  return false;
-}
+    if (form.mobNo && form.mobNo.length !== 10) {
+      showAlert(
+        'Invalid Number',
+        'Mobile number must be 10 digits',
+        'warning',
+      );
+      return false;
+    }
     activityFields.forEach(field => {
       if (field.required && !form[field.fieldName]?.trim()) {
         missing.push(field.fieldName);
@@ -380,13 +352,13 @@ export default function UploadPrescriptionScreen() {
 
     const body = new FormData();
     body.append('type', selectedType);
-   Object.entries(form).forEach(([key, value]) => {
-  if (value !== '') {
-    body.append(key, value);
-  }
-});
+    Object.entries(form).forEach(([key, value]) => {
+      if (value !== '') {
+        body.append(key, value);
+      }
+    });
 
-body.append('defaultFactor', '1');
+    body.append('defaultFactor', '1');
 
     selectedImages.forEach((asset, index) => {
       if (!asset?.uri) {
@@ -418,10 +390,10 @@ body.append('defaultFactor', '1');
 
       if (!response.ok || !json.success) {
         showAlert(
-  'Upload Failed',
-  json.message || 'Unable to submit upload.',
-  'error',
-);
+          'Upload Failed',
+          json.message || 'Unable to submit upload.',
+          'error',
+        );
         return;
       }
 
@@ -484,58 +456,58 @@ body.append('defaultFactor', '1');
 
   const renderActivityField = (field: ActivityField) => {
     if (field.fieldName === 'rxnDuration') {
-  return (
-    <View
-      key="defaultFactor"
-      style={{
-        opacity: 0.55,
-      }}
-    >
-      <LinearGradient
-        colors={['#3273a8', '#42b983']}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 0 }}
-        style={styles.inputGradient}
-      >
-        <View style={styles.innerInputContainer}>
-          <View>
-            <Text
-              style={{
-                color: '#a0a0c0',
-                fontSize: 12,
-                marginBottom: 2,
-              }}
-            >
-              Default Factor
-            </Text>
+      return (
+        <View
+          key="defaultFactor"
+          style={{
+            opacity: 0.55,
+          }}
+        >
+          <LinearGradient
+            colors={['#3273a8', '#42b983']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 0 }}
+            style={styles.inputGradient}
+          >
+            <View style={styles.innerInputContainer}>
+              <View>
+                <Text
+                  style={{
+                    color: '#a0a0c0',
+                    fontSize: 12,
+                    marginBottom: 2,
+                  }}
+                >
+                  Default Factor
+                </Text>
 
-            <Text
-              style={{
-                color: 'white',
-                fontSize: 15,
-                fontWeight: 'bold',
-              }}
-            >
-              1
-            </Text>
-          </View>
+                <Text
+                  style={{
+                    color: 'white',
+                    fontSize: 15,
+                    fontWeight: 'bold',
+                  }}
+                >
+                  1
+                </Text>
+              </View>
 
-          <Icon
-            name="lock"
-            size={18}
-            color="rgba(255,255,255,0.5)"
-          />
+              <Icon
+                name="lock"
+                size={18}
+                color="rgba(255,255,255,0.5)"
+              />
+            </View>
+          </LinearGradient>
         </View>
-      </LinearGradient>
-    </View>
-  );
-}
+      );
+    }
     const label = `${fieldLabel(field.fieldName)}${field.required ? '*' : ''}`;
     const options = fieldOptions(field);
-const rxnOptions =
-  field.fieldName === 'noRxns'
-    ? imageCountOptions
-    : options;
+    const rxnOptions =
+      field.fieldName === 'noRxns'
+        ? imageCountOptions
+        : options;
     if (
       options.length > 0 ||
       field.fieldName === 'brandName' ||
@@ -544,31 +516,31 @@ const rxnOptions =
     ) {
       return (
         <View
-  key={field.fieldName}
-  style={{
-    opacity:
-      field.fieldName === 'noRxns' && !selectedBrand
-        ? 0.45
-        : 1,
-  }}
->
-  {field.fieldName === 'noRxns' && !selectedBrand ? (
-    <TouchableOpacity activeOpacity={1}>
-      <DropdownField
-        placeholder="Select Brand First"
-        active={false}
-      />
-    </TouchableOpacity>
-  ) : (
-    renderDropdown(
-      field.fieldName,
-      form[field.fieldName] || '',
-      label,
-      rxnOptions,
-      value => updateField(field.fieldName, value),
-    )
-  )}
-</View>
+          key={field.fieldName}
+          style={{
+            opacity:
+              field.fieldName === 'noRxns' && !selectedBrand
+                ? 0.45
+                : 1,
+          }}
+        >
+          {field.fieldName === 'noRxns' && !selectedBrand ? (
+            <TouchableOpacity activeOpacity={1}>
+              <DropdownField
+                placeholder="Select Brand First"
+                active={false}
+              />
+            </TouchableOpacity>
+          ) : (
+            renderDropdown(
+              field.fieldName,
+              form[field.fieldName] || '',
+              label,
+              rxnOptions,
+              value => updateField(field.fieldName, value),
+            )
+          )}
+        </View>
       );
     }
 
@@ -582,15 +554,11 @@ const rxnOptions =
       />
     );
   };
-const lowerType = selectedType.toLowerCase();
+  const lowerType = selectedType.toLowerCase();
 
-const isSingleImageType =
-  lowerType === 'pob' || lowerType === 'camp';
+  // Always show single image upload for all activity types
+  const shouldShowImages = selectedType !== '';
 
-const shouldShowImages =
-  isSingleImageType ||
-  (lowerType === 'prescription' &&
-    Number(form.noRxns) > 0);
   return (
     <ImageBackground
       source={require('../assets/newAssets/bgMain.png')}
@@ -609,7 +577,7 @@ const shouldShowImages =
             style={styles.card}
           >
             <View style={styles.header}>
-              <Text style={styles.headerTitle}>Upload Activity</Text>
+              <Text style={styles.headerTitle}>Upload Prescription</Text>
               <View style={styles.typeSelector}>
                 <Text style={styles.typeLabel}>Type:</Text>
                 <TouchableOpacity
@@ -651,6 +619,53 @@ const shouldShowImages =
               </View>
             ) : (
               <View style={styles.form}>
+                {shouldShowImages && (
+                  <>
+                    <View style={styles.imageHeaderRow}>
+                      <Text style={styles.conditionalLabel}>
+                        Upload Proof*
+                      </Text>
+                    </View>
+
+                    <View style={styles.singleImageContainer}>
+                      {selectedImages.map((asset, index) => (
+                        <TouchableOpacity
+                          key={`${index}-${asset?.uri || 'empty'}`}
+                          style={styles.largeImageUploadBox}
+                          onPress={() => pickImage(index)}
+                        >
+                          {asset?.uri ? (
+                            <>
+                              <Image
+                                source={{ uri: asset.uri }}
+                                style={styles.selectedImage}
+                              />
+
+                              <TouchableOpacity
+                                style={styles.removeImageButton}
+                                onPress={() => removeImage(index)}
+                              >
+                                <Icon name="close" size={16} color="white" />
+                              </TouchableOpacity>
+                            </>
+                          ) : (
+                            <View style={styles.imagePlaceholder}>
+                              <Icon
+                                name="cloud-upload"
+                                size={40}
+                                color="#9d7bff"
+                              />
+
+                              <Text style={styles.addPhotoText}>Click to upload</Text>
+                              <Text style={styles.fileInfoText}>JPG, JPEG, Max 2MB</Text>
+                            </View>
+                          )}
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                  </>
+                )}
+
                 <InputField
                   placeholder="Dr Name*"
                   value={form.drName}
@@ -683,52 +698,6 @@ const shouldShowImages =
                 />
 
                 {activityFields.map(renderActivityField)}
-
-                {shouldShowImages && (
-                  <>
-                    <View style={styles.imageHeaderRow}>
-                      <Text style={styles.conditionalLabel}>
-                        Upload Images*
-                      </Text>
-                    </View>
-
-                    <View style={styles.imageGrid}>
-                      {selectedImages.map((asset, index) => (
-                        <TouchableOpacity
-                          key={`${index}-${asset?.uri || 'empty'}`}
-                          style={styles.imageUploadBox}
-                          onPress={() => pickImage(index)}
-                        >
-                          {asset?.uri ? (
-                            <>
-                              <Image
-                                source={{ uri: asset.uri }}
-                                style={styles.selectedImage}
-                              />
-
-                              <TouchableOpacity
-                                style={styles.removeImageButton}
-                                onPress={() => removeImage(index)}
-                              >
-                                <Icon name="close" size={16} color="white" />
-                              </TouchableOpacity>
-                            </>
-                          ) : (
-                            <View style={styles.imagePlaceholder}>
-                              <Icon
-                                name="add-a-photo"
-                                size={24}
-                                color="#9d7bff"
-                              />
-
-                              <Text style={styles.addPhotoText}>Add Photo</Text>
-                            </View>
-                          )}
-                        </TouchableOpacity>
-                      ))}
-                    </View>
-                  </>
-                )}
 
                 <TouchableOpacity
                   style={[
@@ -853,69 +822,69 @@ const styles = StyleSheet.create<Record<string, any>>({
   safeArea: {
     flex: 1,
   },
- alertOverlay: {
-  position: 'absolute',
-  top: 0,
-  left: 0,
-  right: 0,
-  bottom: 0,
-  backgroundColor: 'rgba(0,0,0,0.6)',
-  justifyContent: 'center',
-  alignItems: 'center',
-  zIndex: 999,
-},
+  alertOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 999,
+  },
 
-alertBox: {
-  width: '82%',
-  height: '20%',
-  borderRadius: 24,
-  paddingHorizontal: 25,
-  paddingVertical: 25,
-  alignItems: 'center',
-  borderWidth:2,
-  borderColor:'white'
-},
+  alertBox: {
+    width: '82%',
+    height: '20%',
+    borderRadius: 24,
+    paddingHorizontal: 25,
+    paddingVertical: 25,
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: 'white'
+  },
 
-successAlert: {
-  backgroundColor: '#000f84aa',
-},
+  successAlert: {
+    backgroundColor: '#000f84aa',
+  },
 
-errorAlert: {
-  backgroundColor: '#000f84aa',
-},
+  errorAlert: {
+    backgroundColor: '#000f84aa',
+  },
 
-warningAlert: {
-  backgroundColor: '#000f84aa',
-},
+  warningAlert: {
+    backgroundColor: '#000f84aa',
+  },
 
-alertTitle: {
-  color: 'white',
-  fontSize: 22,
-  fontWeight: 'bold',
-  marginTop: 12,
-},
+  alertTitle: {
+    color: 'white',
+    fontSize: 22,
+    fontWeight: 'bold',
+    marginTop: 12,
+  },
 
-alertMessage: {
-  color: 'white',
-  fontSize: 15,
-  textAlign: 'center',
-  marginTop: 10,
-  lineHeight: 22,
-},
+  alertMessage: {
+    color: 'white',
+    fontSize: 15,
+    textAlign: 'center',
+    marginTop: 10,
+    lineHeight: 22,
+  },
 
-alertButton: {
-  marginTop: 20,
-  backgroundColor: 'rgb(140, 73, 226)',
-  paddingHorizontal: 30,
-  paddingVertical: 10,
-  borderRadius: 15,
-},
+  alertButton: {
+    marginTop: 20,
+    backgroundColor: 'rgb(140, 73, 226)',
+    paddingHorizontal: 30,
+    paddingVertical: 10,
+    borderRadius: 15,
+  },
 
-alertButtonText: {
-  color: 'white',
-  fontWeight: 'bold',
-  fontSize: 15,
-},
+  alertButtonText: {
+    color: 'white',
+    fontWeight: 'bold',
+    fontSize: 15,
+  },
   scrollContent: {
     alignItems: 'center',
     paddingHorizontal: 16,
@@ -1072,6 +1041,10 @@ alertButtonText: {
     gap: 10,
     justifyContent: 'space-between',
   },
+  singleImageContainer: {
+    width: '100%',
+    marginBottom: 5,
+  },
   imageUploadBox: {
     width: (width * 0.9 - 60) / 2,
     height: 100,
@@ -1079,6 +1052,16 @@ alertButtonText: {
     borderStyle: 'dashed',
     borderColor: 'rgba(123, 66, 245, 0.5)',
     borderWidth: 1.5,
+    backgroundColor: 'rgba(0,0,0,0.2)',
+    overflow: 'hidden',
+  },
+  largeImageUploadBox: {
+    width: '100%',
+    height: 160,
+    borderRadius: 15,
+    borderStyle: 'dashed',
+    borderColor: 'rgba(157, 123, 255, 0.6)',
+    borderWidth: 2,
     backgroundColor: 'rgba(0,0,0,0.2)',
     overflow: 'hidden',
   },
@@ -1107,8 +1090,14 @@ alertButtonText: {
   },
   addPhotoText: {
     color: '#9d7bff',
+    fontSize: 14,
+    marginTop: 8,
+    fontWeight: '500',
+  },
+  fileInfoText: {
+    color: '#a0a0c0',
     fontSize: 12,
-    marginTop: 5,
+    marginTop: 4,
   },
   submitBtnContainer: {
     marginTop: 20,

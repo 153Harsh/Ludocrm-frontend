@@ -12,6 +12,7 @@ import {
   TextInput,
   FlatList,
   Dimensions,
+  Modal,
 } from 'react-native';
 
 import Icon from 'react-native-vector-icons/MaterialIcons';
@@ -62,23 +63,26 @@ export default function Chat({
 }: Props) {
   const socketRef =
     useRef<Socket | null>(null);
-const flatListRef =
-  useRef<FlatList>(null);
+  const flatListRef =
+    useRef<FlatList>(null);
   const [messages, setMessages] =
     useState<ChatMessage[]>([]);
 
   const [message, setMessage] =
     useState('');
 
+  // Initialize socket only once when component mounts, not on visibility change
   useEffect(() => {
     if (!visible) {
       return;
     }
 
+    console.log('[CHAT] Initializing socket for boardId:', boardId);
+
     const socket = io(API_BASE_URL, {
       transports: ['websocket'],
       reconnection: true,
-      forceNew: true,
+      forceNew: false, // Changed from true to false to prevent duplicate connections
     });
 
     socketRef.current = socket;
@@ -122,14 +126,20 @@ const flatListRef =
       },
     );
 
+    socket.on('connect_error', (error) => {
+      console.log('❌ Chat socket connection error:', error);
+    });
+
     return () => {
+      console.log('[CHAT] Cleaning up socket');
+      socket.off('connect');
+      socket.off('newBoardChat');
+      socket.off('connect_error');
       socket.removeAllListeners();
-
       socket.disconnect();
-
       socketRef.current = null;
     };
-  }, [visible]);
+  }, [visible, boardId, playerId, userId]);
 
   const sendMessage = () => {
     if (!message.trim()) {
@@ -152,130 +162,133 @@ const flatListRef =
       },
     );
   };
- useEffect(() => {
-  setTimeout(() => {
-    flatListRef.current?.scrollToEnd({
-      animated: true,
-    });
-  }, 100);
-}, [messages]);
-  if (!visible) {
-    return null;
-  }
- 
 
+  // Scroll to end when messages update
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      flatListRef.current?.scrollToEnd({
+        animated: true,
+      });
+    }, 100);
+
+    return () => clearTimeout(timer);
+  }, [messages]);
+
+  // ✅ KEY FIX: Use Modal instead of conditional null return
   return (
-    <View style={styles.overlay}>
-      <View style={styles.container}>
-        {/* HEADER */}
-        <View style={styles.header}>
-          <Text style={styles.headerText}>
-            Board Chat
-          </Text>
+    <Modal
+      transparent
+      visible={visible}
+      animationType="slide"
+      onRequestClose={onClose}
+    >
+      <View style={styles.overlay}>
+        <View style={styles.container}>
+          {/* HEADER */}
+          <View style={styles.header}>
+            <Text style={styles.headerText}>
+              Board Chat
+            </Text>
 
-          <TouchableOpacity
-            onPress={onClose}
-          >
-            <Icon
-              name="close"
-              size={24}
-              color="#000000"
-            />
-          </TouchableOpacity>
-        </View>
+            <TouchableOpacity
+              onPress={onClose}
+            >
+              <Icon
+                name="close"
+                size={24}
+                color="#000000"
+              />
+            </TouchableOpacity>
+          </View>
 
-        {/* CHAT */}
-       <FlatList
-  ref={flatListRef}
-          data={messages}
-          keyExtractor={(item, index) =>
-            `${item.id}-${index}`
-          }
-          contentContainerStyle={{
-  padding: s(10),
-  paddingBottom: s(20),
-}}
-          renderItem={({ item }) => {
-            const isMine =
-              String(item.playerId) ===
-              String(playerId);
+          {/* CHAT MESSAGES */}
+          <FlatList
+            ref={flatListRef}
+            data={messages}
+            keyExtractor={(item, index) =>
+              `${item.id}-${index}`
+            }
+            contentContainerStyle={{
+              padding: s(10),
+              paddingBottom: s(20),
+            }}
+            renderItem={({ item }) => {
+              const isMine =
+                String(item.playerId) ===
+                String(playerId);
 
-            return (
-              <View
-                style={[
-                  styles.messageBox,
+              return (
+                <View
+                  style={[
+                    styles.messageBox,
 
-                  isMine
-                    ? styles.myMessage
-                    : styles.otherMessage,
-                ]}
-              >
-                {!isMine && (
+                    isMine
+                      ? styles.myMessage
+                      : styles.otherMessage,
+                  ]}
+                >
+                  {!isMine && (
+                    <Text
+                      style={
+                        styles.sender
+                      }
+                    >
+                      {item.playerName}
+                    </Text>
+                  )}
+
                   <Text
                     style={
-                      styles.sender
+                      styles.messageText
                     }
                   >
-                    {item.playerName}
+                    {item.message}
                   </Text>
-                )}
-
-                <Text
-                  style={
-                    styles.messageText
-                  }
-                >
-                  {item.message}
-                </Text>
-              </View>
-            );
-          }}
-        />
-
-        {/* INPUT */}
-        <View style={styles.inputRow}>
-          <TextInput
-            value={message}
-            onChangeText={setMessage}
-            placeholder="Type message..."
-            placeholderTextColor="#999"
-            style={styles.input}
+                </View>
+              );
+            }}
           />
 
-          <TouchableOpacity
-            style={styles.sendBtn}
-            onPress={sendMessage}
-          >
-            <Icon
-              name="send"
-              size={20}
-              color="#fff"
+          {/* INPUT */}
+          <View style={styles.inputRow}>
+            <TextInput
+              value={message}
+              onChangeText={setMessage}
+              placeholder="Type message..."
+              placeholderTextColor="#999"
+              style={styles.input}
             />
-          </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.sendBtn}
+              onPress={sendMessage}
+            >
+              <Icon
+                name="send"
+                size={20}
+                color="#fff"
+              />
+            </TouchableOpacity>
+          </View>
         </View>
       </View>
-    </View>
+    </Modal>
   );
 }
 
 const styles = StyleSheet.create({
   overlay: {
-    position: 'absolute',
-    width: '100%',
-    height: '100%',
-    backgroundColor:
-      'rgba(0,0,0,0.35)',
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.35)',
     justifyContent: 'flex-end',
-    zIndex: 9999,
   },
 
   container: {
     height: H * 0.5,
     backgroundColor: 'rgba(237, 237, 237, 0.95)',
-    borderRadius: s(20),
+    borderTopLeftRadius: s(20),
+    borderTopRightRadius: s(20),
     overflow: 'hidden',
-    marginHorizontal: '6%',
-    bottom:s(240)
   },
 
   header: {
@@ -334,6 +347,7 @@ const styles = StyleSheet.create({
     borderRadius: s(12),
     paddingHorizontal: s(12),
     color: '#000000',
+    height: s(44),
   },
 
   sendBtn: {

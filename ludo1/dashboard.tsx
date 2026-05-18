@@ -108,8 +108,14 @@ type DashboardProfile = {
   region?: string | null;
   zone?: string | null;
   managerId?: string | null;
+
   coins: number;
   moves: number;
+
+  diceRollBalance: number;
+  hearts: number;
+  kills: number;
+
   profileImage?: string | null;
 };
 
@@ -209,6 +215,9 @@ const ProfilePage = () => {
   const [profile, setProfile] = useState<DashboardProfile>({
     coins: 0,
     moves: 0,
+    diceRollBalance: 0,
+    hearts: 0,
+    kills: 0,
   });
   const [recentMatches, setRecentMatches] = useState<
     Array<{ isWin: boolean; isDraw: boolean; mrScore: number }>
@@ -222,8 +231,10 @@ const ProfilePage = () => {
   const playerRole = user?.role || 'MR';
   // For MR, use the manager/FLM id fetched into `profile.managerId` (e.g. E31671)
   // because `user?.flmId` can be empty in the AuthContext.
-  // Force creatorId for board status filtering
+  // Creator/FLM id for boards/status filtering.
+  // Must match `boards.creator` in MySQL.
   const creatorId = 'A1234';
+
   const profileTeamLogo = getTeamLogo(profile.teamName);
 
   const renderTeamLogo = (team?: string | null) => {
@@ -337,6 +348,14 @@ const ProfilePage = () => {
           data.currentBalanceMoves,
           data.moves,
         ),
+        diceRollBalance: numberFromDb(
+          data.diceRollBalance,
+          data.currentDiceRollBalance,
+        ),
+
+        hearts: numberFromDb(data.currentHeartBalance, data.hearts),
+
+        kills: numberFromDb(data.kills),
         profileImage: profileImageUrl,
       });
     } catch (error) {
@@ -567,14 +586,35 @@ const ProfilePage = () => {
             </View>
             <View style={styles.statChip}>
               <Image
+                source={require('../assets/gameAssets/heart.png')}
+                style={styles.statIcon}
+              />
+              <Text style={styles.statChipText}>{profile.hearts}</Text>
+            </View>
+            <View style={styles.statChip}>
+              <Image
+                source={require('../assets/newAssets/bgdice.png')}
+                style={[styles.statIcon,{tintColor:'white'}]}
+              />
+              <Text style={styles.statChipText}>{profile.diceRollBalance}</Text>
+            </View>
+            <View style={styles.statChip}>
+              <Image
                 source={require('../assets/gameAssets/moves.png')}
                 style={styles.statIcon}
               />
               <Text style={styles.statChipText}>{profile.moves}</Text>
             </View>
+            <View style={styles.statChip}>
+              <Image
+                source={require('../assets/gameAssets/kill.png')}
+                style={styles.statIcon}
+              />
+              <Text style={styles.statChipText}>{profile.kills}</Text>
+            </View>
           </View>
 
-          <View style={styles.socketBadge}>
+          {/* <View style={styles.socketBadge}>
             <View
               style={[
                 styles.socketDot,
@@ -586,7 +626,7 @@ const ProfilePage = () => {
             <Text style={styles.socketText}>
               {socketConnected ? 'Live' : 'Offline'}
             </Text>
-          </View>
+          </View> */}
 
           <View style={styles.history}>
             <Text style={styles.historyLabel}>Last 5 Matches</Text>
@@ -595,10 +635,10 @@ const ProfilePage = () => {
             ) : (
               recentMatches.map((m, i) => (
                 <View key={i} style={styles.matchItem}>
-                  <View style={styles.rankBadge}>
+                  {/* <View style={styles.rankBadge}>
                     <Icon name="emoji-events" size={8} color="#FFD700" />
                     <Text style={styles.rankText}>#{m.isWin}</Text>
-                  </View>
+                  </View> */}
                   <View
                     style={[
                       styles.resultDot,
@@ -676,7 +716,11 @@ const ProfilePage = () => {
 
         <View style={styles.bottomSection}>
           <LinearGradient
-            colors={['rgb(109, 91, 183)', 'rgb(118, 98, 198)', 'rgb(128, 109, 203)']}
+            colors={[
+              'rgb(109, 91, 183)',
+              'rgb(118, 98, 198)',
+              'rgb(128, 109, 203)',
+            ]}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 0 }}
             style={styles.box}
@@ -724,7 +768,9 @@ const ProfilePage = () => {
                 <>
                   {activeTab === 'Live' &&
                     (matchesByTab.Live.length === 0 ? (
-                      <Text style={styles.emptyText}>No live Games At The Movement</Text>
+                      <Text style={styles.emptyText}>
+                        No live Games At The Movement
+                      </Text>
                     ) : (
                       matchesByTab.Live.map((match, index) => (
                         <View key={match._id} style={matchCardStyle(match)}>
@@ -793,7 +839,9 @@ const ProfilePage = () => {
                     ))}
                   {activeTab === 'Upcoming' &&
                     (matchesByTab.Upcoming.length === 0 ? (
-                      <Text style={styles.emptyText}>No Upcoming Games Scheduled</Text>
+                      <Text style={styles.emptyText}>
+                        No Upcoming Games Scheduled
+                      </Text>
                     ) : (
                       matchesByTab.Upcoming.map((match, index) => (
                         <View key={match._id} style={matchCardStyle(match)}>
@@ -1089,7 +1137,12 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginTop: s(4),
   },
-  emptyText: { color: 'white', textAlign: 'center', marginTop: s(20) ,fontSize: 14},
+  emptyText: {
+    color: 'white',
+    textAlign: 'center',
+    marginTop: s(20),
+    fontSize: 14,
+  },
   box: {
     flex: 1,
     borderRadius: s(20),

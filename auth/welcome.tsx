@@ -53,9 +53,10 @@ const styles = StyleSheet.create({
   },
   buttonWrapper: {
     position: 'absolute',
-    left: s(24),
-    right: s(24),
-    bottom: s(36),
+    // left: s(24),
+    // right: s(24),/
+    bottom: s(56),
+    width: "50%",
     borderRadius: 8,
     overflow: 'hidden',
     borderColor: '#bfbfbf',
@@ -63,9 +64,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   button: {
-    paddingHorizontal: s(30),
+    // paddingHorizontal: s(30),
     paddingVertical: s(12),
     borderRadius: 8,
+    width: "100%",
     alignItems: 'center',
     justifyContent: 'center',
   },
