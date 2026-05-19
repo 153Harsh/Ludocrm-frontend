@@ -210,13 +210,32 @@ interface Player {
   winPosition?: number | null;
   teamName?: string;
   lastMovedAt?: string;
+  movesLost?: number;
+  hearts?: number;
 }
 type DiceByPlayerRow = {
   playerId: string;
   teamId?: string;
+  role?: string;
   diceValue: number | null;
   uploadId?: string | null;
   rolledAt?: string | null;
+};
+
+type TurnState = {
+  mode?: 'free' | 'turn' | string;
+  currentTurnPlayerId?: string | null;
+  turnOrder?: string[];
+};
+
+type LoggedInMrStats = {
+  mrId?: string;
+  flmId?: string;
+  currentDiceRollBalance?: number;
+  currentHeartBalance?: number;
+  mrBoardMoves?: number;
+  unplayedDiceValue?: number | null;
+  unplayedDiceRolledAt?: string | null;
 };
 
 const DICE_IMAGE_BY_VALUE: Record<number, any> = {
@@ -338,9 +357,10 @@ const getTeamLogo = (team?: string | null) => {
 
 const normalizeDiceRows = (rows?: any[]): DiceByPlayerRow[] =>
   (Array.isArray(rows) ? rows : []).map((d: any) => ({
-    playerId: String(d.teamPlayerId || d.playerId),
+    playerId: String(d.teamPlayerId || d.teamId || d.playerId),
     teamId:
       d.teamId === null || d.teamId === undefined ? undefined : String(d.teamId),
+    role: d.role === null || d.role === undefined ? undefined : String(d.role),
     diceValue:
       d.diceValue === null || d.diceValue === undefined
         ? null
@@ -389,7 +409,6 @@ export default function MyBoardScreen(): React.ReactElement {
   const [players, setPlayers] = useState<Player[]>([]);
   const [loading, setLoading] = useState(true);
   const [diceRows, setDiceRows] = useState<DiceByPlayerRow[]>([]);
-  const myPlayerIdForDice = isFlm ? myFlmId : user?.id;
   const myPlayerColor =
   players.find(p => p.playerId === myFlmId)?.color || 'blue';
 
@@ -427,18 +446,19 @@ const getPerspectivePosition = useCallback(
 );
 
   const socketRef = useRef<Socket | null>(null);
-  const creatorId = 'S1101';
+  const creatorId = 'A1234';
 
   const pawnsRef = useRef<Pawn[]>([]);
   const [boardData, setBoardData] = useState<any>(null);
   const [activePlayers, setActivePlayers] = useState<any[]>([]);
 const [showChat, setShowChat] =
   useState(false);
-  const usedDiceUploadIdRef = useRef<string | null>(null);
+  const [turnState, setTurnState] = useState<TurnState | null>(null);
+  const [turnSecondsLeft, setTurnSecondsLeft] = useState<number | null>(null);
+  const [loggedInMrStats, setLoggedInMrStats] =
+    useState<LoggedInMrStats | null>(null);
   
   const [currentDiceValue, setCurrentDiceValue] = useState<number | null>(null);
-
-  const [selectedUploadId, setSelectedUploadId] = useState<string | null>(null);
 
   const [isSelectingDice, setIsSelectingDice] = useState(false);
 
@@ -629,15 +649,16 @@ const [showChat, setShowChat] =
       setPawns(json.data.pawns || []);
       setPlayers(json.data.players || []);
       setBoardData(json.data);
+      setLoggedInMrStats(json.data.loggedInMrStats || null);
+      if (json.data.loggedInMrStats?.unplayedDiceValue) {
+        setCurrentDiceValue(Number(json.data.loggedInMrStats.unplayedDiceValue));
+      }
 
       const incomingDiceRows = normalizeDiceRows(
         json.data.diceValue || json.data.allPlayersDice || [],
       );
 
       setDiceRows(incomingDiceRows);
-      const unplayed = (json.data?.unplayedDiceValue ??
-        json.data?.unplayedDiceValues ??
-        null) as number | number[] | null;
     } catch (e) {
       console.warn('fetchBoardState error:', e);
     }
@@ -812,6 +833,11 @@ const getNextCellPosition = (
           setPlayers(data.players || []);
           setPawns(data.pawns || []);
           setBoardData(data);
+          setTurnState(response?.turnState || null);
+          setLoggedInMrStats(data.loggedInMrStats || null);
+          if (data.loggedInMrStats?.unplayedDiceValue) {
+            setCurrentDiceValue(Number(data.loggedInMrStats.unplayedDiceValue));
+          }
           const incomingDiceRows = normalizeDiceRows(
             data.diceValue || data.allPlayersDice || [],
           );
@@ -853,46 +879,18 @@ const getNextCellPosition = (
 //   joinSound.play();
 // });
       fetchActivePlayers(boardId);
-      const diceValues =
-  data?.loggedInMrStats?.diceValues || [];
-
-if (diceValues.length) {
-  setDiceRows(prev => {
-    const next = [...prev];
-
-    diceValues.forEach((d: any) => {
-      const row = {
-        playerId: String(data.flmId),
-
-        diceValue:
-          d.diceValue === null ||
-          d.diceValue === undefined
-            ? null
-            : Number(d.diceValue),
-
-        uploadId:
-          d.id === null || d.id === undefined ? null : String(d.id),
-
-        rolledAt:
-          d.dateOfUpload || null,
-      };
-
-      const existingIndex = next.findIndex(
-        r =>
-          String(r.uploadId) ===
-          String(row.uploadId),
-      );
-
-      if (existingIndex >= 0) {
-        next[existingIndex] = row;
-      } else {
-        next.push(row);
+      if (data?.turnState) {
+        setTurnState(data.turnState);
       }
-    });
-
-    return next;
-  });
-}
+      if (
+        data?.loggedInMrStats &&
+        String(data.loggedInMrStats.flmId) === String(myFlmId)
+      ) {
+        setLoggedInMrStats(data.loggedInMrStats);
+        if (data.loggedInMrStats.unplayedDiceValue) {
+          setCurrentDiceValue(Number(data.loggedInMrStats.unplayedDiceValue));
+        }
+      }
     });
     socket.on('playerJoined', (data: any) => {
 
@@ -922,6 +920,30 @@ if (diceValues.length) {
       if (data?.boardId !== boardId) {
         return;
       }
+      if (data?.turnState) {
+        setTurnState(data.turnState);
+      }
+    });
+    socket.on('turnStateUpdate', (data: any) => {
+      if (data?.boardId !== boardId) {
+        return;
+      }
+
+      setTurnState({
+        mode: data.mode,
+        currentTurnPlayerId: data.currentTurnPlayerId,
+        turnOrder: data.turnOrder,
+      });
+      setTurnSecondsLeft(data.mode === 'turn' ? 30 : null);
+    });
+    socket.on('turnTimedOut', (data: any) => {
+      if (data?.boardId !== boardId) {
+        return;
+      }
+
+      if (String(data.playerId) === String(myFlmId)) {
+        setCurrentDiceValue(null);
+      }
     });
     socket.on('diceRolled', (data: any) => {
 
@@ -935,6 +957,31 @@ if (diceValues.length) {
         );
 
         setDiceRows(incomingDiceRows);
+      }
+      if (Array.isArray(data?.updatedPlayers)) {
+        setPlayers(prev =>
+          prev.map(p => {
+            const updated = data.updatedPlayers.find(
+              (u: any) => String(u.playerId) === String(p.playerId),
+            );
+
+            return updated ? { ...p, ...updated } : p;
+          }),
+        );
+      }
+      if (
+        data?.loggedInMrStats &&
+        String(data.loggedInMrStats.flmId) === String(myFlmId)
+      ) {
+        setLoggedInMrStats(data.loggedInMrStats);
+      }
+      if (
+        String(data?.teamId) === String(myFlmId) ||
+        String(data?.playerId) === String(user?.id)
+      ) {
+        setCurrentDiceValue(
+          data.diceValue == null ? null : Number(data.diceValue),
+        );
       }
     });
     socket.on('newDiceValue', (data: any) => {
@@ -961,6 +1008,12 @@ if (diceValues.length) {
 
         
       }
+      if (
+        String(data?.teamId) === String(myFlmId) ||
+        String(data?.playerId) === String(user?.id)
+      ) {
+        setCurrentDiceValue(null);
+      }
     });
     socket.on('pawnMoved', async (delta: any) => {
 
@@ -979,6 +1032,9 @@ if (diceValues.length) {
             return updated ? { ...p, ...updated } : p;
           }),
         );
+      }
+      if (d.loggedInMrStats) {
+        setLoggedInMrStats(d.loggedInMrStats);
       }
       if (Array.isArray(d.updatedDice)) {
         setDiceRows(prev => {
@@ -1014,17 +1070,6 @@ if (diceValues.length) {
           animatePawnMovement(oldPawn, updatedPawn, d.movedPawn);
         }
       }
-      socketRef.current?.emit('joinGameAsActive', {
-        boardId,
-        playerId: myFlmId,
-        userId: user?.id,
-      });
-
-      socketRef.current?.emit('playerJoined', {
-        boardId,
-        playerId: myFlmId,
-        userId: user?.id,
-      });
     });
     return () => {
 
@@ -1036,7 +1081,21 @@ if (diceValues.length) {
     };
   }, [boardId, myFlmId, user?.id]);
 
-  const handleDiceSelection = (diceValue: number, uploadId: string) => {
+  useEffect(() => {
+    if (turnSecondsLeft === null || turnSecondsLeft <= 0) {
+      return;
+    }
+
+    const timer = setTimeout(() => {
+      setTurnSecondsLeft(prev =>
+        prev === null ? null : Math.max(prev - 1, 0),
+      );
+    }, 1000);
+
+    return () => clearTimeout(timer);
+  }, [turnSecondsLeft]);
+
+  const handleDiceRoll = () => {
     if (!socketRef.current || !boardId) {
       return;
     }
@@ -1045,15 +1104,20 @@ if (diceValues.length) {
       return;
     }
 
+    if (currentDiceValue) {
+      return;
+    }
+
     setIsSelectingDice(true);
+    const rolledValue = Math.floor(Math.random() * 6) + 1;
     socketRef.current.emit(
-      'selectDice',
+      'rollDice',
       {
         boardId,
         playerId: myFlmId,
         userId: user?.id,
-        selectedValue: diceValue,
-        uploadId,
+        diceValue: rolledValue,
+        validMoves: true,
       },
       (response: any) => {
 
@@ -1062,35 +1126,60 @@ if (diceValues.length) {
         if (!response?.ok) {
           showAlert({
             title: 'Dice Error',
-            message: response?.msg || 'Failed to select dice',
+            message: response?.msg || 'Failed to roll dice',
             variant: 'error',
             buttons: [{ text: 'OK', style: 'default', onPress: withClose() }],
           });
           return;
         }
 
-        setCurrentDiceValue(diceValue);
+        setCurrentDiceValue(Number(response.diceValue ?? rolledValue));
+        const dice = Number(response.diceValue ?? rolledValue);
 
-        setSelectedUploadId(uploadId);
+// Get only blue pawns
+const bluePawns = pawnsRef.current.filter(
+  p => p.color === 'blue',
+);
+
+// Pawns outside base
+const activeBluePawns = bluePawns.filter(
+  p => p.currentPosition && p.currentPosition !== '0',
+);
+
+// If only one pawn is outside, move automatically
+if (
+  activeBluePawns.length === 1 &&
+  dice !== 6
+) {
+  setTimeout(() => {
+    handlePawnClick(activeBluePawns[0]);
+  }, 500);
+}
+        if (Array.isArray(response.allPlayersDice)) {
+          setDiceRows(normalizeDiceRows(response.allPlayersDice));
+        }
+        if (Array.isArray(response.updatedPlayers)) {
+          setPlayers(prev =>
+            prev.map(p => {
+              const updated = response.updatedPlayers.find(
+                (u: any) => String(u.playerId) === String(p.playerId),
+              );
+
+              return updated ? { ...p, ...updated } : p;
+            }),
+          );
+        }
+        if (response.loggedInMrStats) {
+          setLoggedInMrStats(response.loggedInMrStats);
+        }
       },
     );
   };
 
   const handlePawnClick = (pawn: Pawn) => {
-    if (!socketRef.current || !boardId) {
+    if (!socketRef.current || !boardId || !currentDiceValue) {
       return;
     }
-
-    if (!currentDiceValue) {
-      // console.log('❌ No selected dice');
-      return;
-    }
-
-    if (!selectedUploadId) {
-      // console.log('❌ No uploadId');
-      return;
-    }
-    usedDiceUploadIdRef.current = selectedUploadId;
 
     socketRef.current.emit(
       'movePawn',
@@ -1100,11 +1189,8 @@ if (diceValues.length) {
         playerId: myFlmId,
         userId: user?.id,
         diceValue: currentDiceValue,
-        uploadId: selectedUploadId,
       },
       (response: any) => {
-        // console.log('♟️ movePawn response:', response);
-
         if (!response?.ok) {
           showAlert({
             title: 'Move Error',
@@ -1115,31 +1201,7 @@ if (diceValues.length) {
           return;
         }
 
-        // console.log('✅ Pawn moved successfully');
-        const usedUploadId = selectedUploadId;
-        const usedDiceValue = currentDiceValue;
-
-        socketRef.current?.emit('useDiceValue', {
-          boardId,
-          playerId: user?.id || myPlayerIdForDice,
-          usedValue: usedDiceValue,
-          uploadId: usedUploadId,
-        });
-
-        setDiceRows(prev =>
-          prev.map(r =>
-            String(r.uploadId) === String(usedUploadId)
-              ? {
-                  ...r,
-                  diceValue: null,
-                  uploadId: null,
-                }
-              : r,
-          ),
-        );
         setCurrentDiceValue(null);
-
-        setSelectedUploadId(null);
       },
     );
   };
@@ -1187,9 +1249,18 @@ if (diceValues.length) {
 
         elements.push(
           <TouchableOpacity
-            key={`${pawn.id}-${pawn.currentPosition}`}
-            activeOpacity={0.8}
-            onPress={() => handlePawnClick(pawn)}
+  key={`${pawn.id}-${pawn.currentPosition}`}
+  activeOpacity={
+    pawn.color === 'blue' && currentDiceValue ? 0.8 : 1
+  }
+  disabled={
+    pawn.color !== 'blue' || !currentDiceValue
+  }
+  onPress={() => {
+    if (pawn.color === 'blue') {
+      handlePawnClick(pawn);
+    }
+  }}
             style={[
               styles.boardPawn,
               {
@@ -1238,9 +1309,18 @@ basePawnsByColor[perspectiveColor].push(p);
         const pixel = gridToPixel(pos[0], pos[1]);
         elements.push(
           <TouchableOpacity
-           key={`${pawn.id}-${pawn.currentPosition}`}
-            activeOpacity={0.8}
-            onPress={() => handlePawnClick(pawn)}
+  key={`${pawn.id}-${pawn.currentPosition}`}
+  activeOpacity={
+    pawn.color === 'blue' && currentDiceValue ? 0.8 : 1
+  }
+  disabled={
+    pawn.color !== 'blue' || !currentDiceValue
+  }
+  onPress={() => {
+    if (pawn.color === 'blue') {
+      handlePawnClick(pawn);
+    }
+  }}
             style={[
               styles.boardPawn,
               {
@@ -1389,56 +1469,38 @@ basePawnsByColor[perspectiveColor].push(p);
               text: 'Join',
               style: 'default',
               onPress: withClose(async () => {
-                try {
-                  const response = await fetch(
-                    `${API_BASE_URL}/api/active-player/set`,
-                    {
-                      method: 'POST',
-                      headers: {
-                        ...authHeaders(session?.token),
-                        'Content-Type': 'application/json',
-                      },
-                      body: JSON.stringify({
-                        boardId,
-                        playerId: user?.id,
-                        playerRole: user?.role,
-                        flmId: myFlmId,
-                      }),
-                    },
-                  );
+                socketRef.current?.emit(
+                  'joinGameAsActive',
+                  {
+                    boardId,
+                    playerId: myFlmId,
+                    userId: user?.id,
+                  },
+                  async (response: any) => {
+                    if (!response?.ok) {
+                      showAlert({
+                        title: 'Cannot Join',
+                        message: response?.msg || 'Failed to join game',
+                        variant: 'error',
+                        buttons: [{ text: 'OK', style: 'default', onPress: withClose() }],
+                      });
+                      return;
+                    }
 
-                  const json = await response.json();
-
-                  // console.log('JOIN RESPONSE', json);
-
-                  if (json?.success || json?.ok) {
                     await fetchBoardState(boardId!);
+                    if (response?.data?.turnState) {
+                      setTurnState(response.data.turnState);
+                    }
+                    if (response?.data?.loggedInMrStats) {
+                      setLoggedInMrStats(response.data.loggedInMrStats);
+                    }
                     socketRef.current?.emit('joinGame', {
                       boardId,
                       playerId: myFlmId,
                       userId: user?.id,
                     });
-
-                    // console.log('🔄 REJOIN SENT');
-
-                    setTimeout(() => {
-                      socketRef.current?.emit('joinGameAsActive', {
-                        boardId,
-                        playerId: myFlmId,
-                        userId: user?.id,
-                      });
-
-                      // console.log('✅ joinGameAsActive emitted AFTER REJOIN');
-                    }, 700);
-                    socketRef.current?.emit('playerJoined', {
-                      boardId,
-                      playerId: myFlmId,
-                      userId: user?.id,
-                    });
-                  }
-                } catch (error) {
-                  // console.log(error);
-                }
+                  },
+                );
               }),
             },
           ],
@@ -1666,76 +1728,110 @@ const blueActivePlayer = activePlayers.find(
 
   const bluePlayerExists = !!blueActivePlayer;
 
-  const bluePlayer = bluePlayerExists ? bluePlayerData : null;
-const perspectiveDiceRow =
-  [...diceRows]
-    .reverse()
-    .find(
-      r =>
-        String(r.playerId) === String(myFlmId) &&
-        r.diceValue != null,
-    ) || null;
-// const perspectiveDiceValue =
-//   perspectiveDiceRow?.diceValue == null
-//     ? null
-//     : Number(perspectiveDiceRow.diceValue);
-// // console.log('🎲 diceRows =>', diceRows);
-// // console.log('🎲 perspectiveDiceRow =>', perspectiveDiceRow);
-// // console.log('🎲 perspectiveDiceValue =>', perspectiveDiceValue);
-
-// const perspectiveUploadId =
-//   perspectiveDiceRow?.uploadId ?? null;
-//   // console.log('BLUE PLAYER =>', bluePlayer);
-//   // console.log('TEAM NAME =>', bluePlayer?.teamName);
-//   // console.log('TEAM LOGO =>', getTeamLogo(bluePlayer?.teamName));
+const bluePlayer = bluePlayerData;
+const blueDiceBalance =
+  loggedInMrStats?.currentDiceRollBalance ?? 0;
+const blueUserMoves = loggedInMrStats?.mrBoardMoves ?? 0;
+const blueUserHearts = loggedInMrStats?.currentHeartBalance ?? 0;
+const isMyTurn =
+  !turnState ||
+  turnState.mode !== 'turn' ||
+  String(turnState.currentTurnPlayerId) === String(myFlmId);
+const canRollBlueDice =
+  bluePlayerExists &&
+  !isFlm &&
+  isMyTurn &&
+  !currentDiceValue &&
+  blueDiceBalance > 0 &&
+  !isSelectingDice;
   return (
     <SafeAreaView style={styles.container}>
       <View>
         {/* TOP: TEAMS GRID */}
-        <View style={styles.teamsGrid}>
-                  {players.map((player, index) => (
-                    <View
-                      key={player.playerId}
-                      style={[
-                        styles.teamCard,
-                        player.playerId === myFlmId && styles.teamCardActive,
-                      ]}
-                    >
-                      <View style={styles.numberBadge}>
-                        <Text style={styles.numberText}>
-          {player.rank ?? index + 1}
-        </Text>
-                      </View>
-                      <Text style={styles.teamName} numberOfLines={2}>
-                                            {(player.teamName || player.playerName).replace(
-                                              /([a-z])([A-Z])/g,
-                                              '$1\n$2',
-                                            )}
-                                          </Text>
-                      <View style={styles.statsRow}>
-                        <View style={styles.statItem}>
-                          <Image
-                            source={require('../assets/gameAssets/kill.png')}
-                            style={styles.statIcon}
-                          />
-                          <Text style={styles.statText}>{player.kills}</Text>
-                        </View>
-                        <View style={styles.statItem}>
-                          <Image
-                            source={require('../assets/gameAssets/moves.png')}
-                            style={styles.statIcon}
-                          />
-                          <Text style={styles.statText}>{player.moves}</Text>
-                        </View>
-                      </View>
-                      {player.playerId === myFlmId && (
-                        <View style={styles.badgeLabel}>
-                          <Text style={styles.badgeText}>YOU</Text>
-                        </View>
-                      )}
-                    </View>
-                  ))}
+        <View style={styles.teamsContainer}>
+          {players.map((player, index) => {
+            const diceIcon =
+              player.color === 'red'
+                ? require('../assets/gameAssets/dice-red.png')
+                : player.color === 'green'
+                ? require('../assets/gameAssets/dice-green.png')
+                : player.color === 'yellow'
+                ? require('../assets/gameAssets/dice-yellow.png')
+                : require('../assets/gameAssets/dice-blue.png');
+
+            return (
+              <View key={player.playerId} style={styles.teamCard}>
+                <View style={styles.teamNumberCircle}>
+                  <Text style={styles.teamNumberText}>
+                    {player.rank ?? index + 1}
+                  </Text>
                 </View>
+
+                <View style={styles.compactStatsContainer}>
+                  <View style={styles.compactRow}>
+                    <Text style={styles.teamTitle} numberOfLines={2}>
+                      {(player.teamName || player.playerName).replace(
+                        /([a-z])([A-Z])/g,
+                        '$1\n$2',
+                      )}
+                    </Text>
+                    <View style={[styles.compactItem,{right:s(1)}]}>
+                      <Image
+                        source={require('../assets/gameAssets/move-gain.png')}
+                        style={styles.compactIcon}
+                      />
+                      <Text style={styles.compactText}>{player.moves}</Text>
+                    </View>
+
+                    <View style={[styles.compactItem,{left:s(0)}]}>
+                      <Image
+                        source={require('../assets/gameAssets/moves.png')}
+                        style={styles.compactIcon}
+                      />
+                      <Text style={styles.compactText}>{player.moves}</Text>
+                    </View>
+                  </View>
+
+                  <View style={styles.compactRow}>
+                    <View style={styles.compactItem}>
+                      <Image
+                        source={require('../assets/gameAssets/kill.png')}
+                        style={styles.compactIcon}
+                      />
+                      <Text style={styles.compactText}>{player.kills}</Text>
+                    </View>
+
+                    <View style={[styles.compactItem,{left:s(6)}]}>
+                      <Image
+                        source={require('../assets/gameAssets/heart.png')}
+                        style={styles.compactIcon}
+                      />
+                      <Text style={styles.compactText}>
+                        {player.hearts ?? 0}
+                      </Text>
+                    </View>
+
+                    <View style={[styles.compactItem, { left: s(16) }]}>
+                      <Image
+                        source={require('../assets/gameAssets/move-loss.png')}
+                        style={styles.compactIcon}
+                      />
+                      <Text style={styles.compactText}>
+                        {player.movesLost ?? 0}
+                      </Text>
+                    </View>
+                    <View style={[styles.compactItem, { left: s(18) }]}>
+                      <Image source={diceIcon} style={styles.compactIcon} />
+                      <Text style={styles.compactText}>
+                        {player.currentDiceRollBalance}
+                      </Text>
+                    </View>
+                  </View>
+                </View>
+              </View>
+            );
+          })}
+        </View>
 
         {/* TOP - RED */}
         <View style={styles.dice}>
@@ -1839,7 +1935,7 @@ const perspectiveDiceRow =
         style={{
           position: 'relative',
           width: '47%',
-          height: s(78),
+          height: s(94),
           backgroundColor: '#d9d9d9',
           marginHorizontal: '3%',
           left: s(2),
@@ -1876,16 +1972,22 @@ const perspectiveDiceRow =
                 <Image
                   source={getTeamLogo(bluePlayer?.teamName)}
                   style={{
-                    width: s(32),
-                    height: s(32),
+                    width: s(40),
+                    height: s(40),
                     resizeMode: 'contain',
                     marginRight: s(6),
-                    bottom: s(6),
+                    // bottom: s(6),
+                    marginTop:s(4)
                   }}
                 />
               </View>
 
               {/* MOVES */}
+              <View style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  marginTop: s(10),
+                }}>
               <View
                 style={{
                   flexDirection: 'row',
@@ -1910,14 +2012,69 @@ const perspectiveDiceRow =
                     color: '#000',
                   }}
                 >
-                  {bluePlayer?.moves ?? 0}
+                  {blueUserMoves}
                 </Text>
+              </View>
+              <View
+                style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  marginTop: s(4),
+                }}
+              >
+                <Image
+                  source={require('../assets/gameAssets/heart.png')}
+                  style={{
+                    width: s(18),
+                    height: s(18),
+                    resizeMode: 'contain',
+                    marginRight: s(4),
+                  }}
+                />
+
+                <Text
+                  style={{
+                    fontSize: s(16),
+                    fontWeight: '800',
+                    color: '#000',
+                  }}
+                >
+                  {blueUserHearts}
+                </Text>
+              </View>
+              <View
+                style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  marginTop: s(4),
+                }}
+              >
+                <Image
+                  source={require('../assets/gameAssets/dice-blue.png')}
+                  style={{
+                    width: s(18),
+                    height: s(18),
+                    resizeMode: 'contain',
+                    marginRight: s(4),
+                  }}
+                />
+
+                <Text
+                  style={{
+                    fontSize: s(16),
+                    fontWeight: '800',
+                    color: '#000',
+                  }}
+                >
+                  {blueDiceBalance}
+                </Text>
+              </View>
               </View>
               <View
   style={{
     flexDirection: 'row',
     alignItems: 'center',
-    marginTop: s(4),
+    // marginTop: s(2),
   }}
 >
   <Text
@@ -1961,89 +2118,12 @@ const perspectiveDiceRow =
                 Player Awaiting
               </Text>
 
-              <Text
-                style={{
-                  fontSize: s(12),
-                  color: '#000000',
-                  marginTop: s(4),
-                }}
-              >
-                No upcoming dice
-              </Text>
             </View>
           )}
         </View>
-{/* RIGHT: big active dice (tap) + small dice */}
+{/* RIGHT: one big dice */}
 {(() => {
-  if (!bluePlayer) {
-    return (
-      <Text
-        style={{
-          top: s(26),
-          fontSize: s(13),
-          color: '#444',
-          fontWeight: '700',
-        }}
-      >
-        No Dice
-      </Text>
-    );
-  }
-
-  const allMyDice = [...diceRows]
-    .filter(
-      r =>
-        String(r.playerId) === String(myFlmId) &&
-        r.diceValue != null,
-    )
-    .sort((a, b) => {
-      const at = a.rolledAt
-        ? new Date(a.rolledAt).getTime()
-        : 0;
-
-      const bt = b.rolledAt
-        ? new Date(b.rolledAt).getTime()
-        : 0;
-
-      return at - bt;
-    });
-
-  const activeDiceRow = allMyDice[0] || null;
-
-  const active =
-    activeDiceRow?.diceValue == null
-      ? null
-      : Number(activeDiceRow.diceValue);
-
-  const activeUploadId =
-    activeDiceRow?.uploadId || '';
-
-  const smallDice = allMyDice
-    .slice(1, 3)
-    .map(d =>
-      d.diceValue == null
-        ? null
-        : Number(d.diceValue),
-    )
-    .filter(v => v != null);
-
-  if (
-    active == null ||
-    !DICE_IMAGE_BY_VALUE[active]
-  ) {
-    return (
-      <Text
-        style={{
-          top: s(26),
-          fontSize: s(13),
-          color: '#444',
-          fontWeight: '700',
-        }}
-      >
-        No Dice
-      </Text>
-    );
-  }
+  const diceValue = currentDiceValue || 1;
 
   return (
     <View
@@ -2056,51 +2136,37 @@ const perspectiveDiceRow =
         paddingTop: s(4),
       }}
     >
-      {/* SMALL DICE */}
-      {smallDice.length > 0 && (
-        <View
-          style={{
-            flexDirection: 'row',
-            alignItems: 'flex-start',
-            gap: s(5),
-            marginTop: s(2),
-          }}
-        >
-          {smallDice.map((v, idx) => {
-           return (
-  <Image
-    key={`${v}-${idx}`}
-    source={DICE_IMAGE_BY_VALUE[v as number]}
-    style={{
-      width: 24,
-      height: 24,
-      resizeMode: 'contain',
-    }}
-  />
-);
-          })}
-        </View>
-      )}
-
-      {/* BIG DICE */}
       <TouchableOpacity
-        activeOpacity={0.8}
-        onPress={() => {
-          handleDiceSelection(
-            active,
-            activeUploadId,
-          );
-        }}
+        activeOpacity={canRollBlueDice ? 0.8 : 1}
+        disabled={!canRollBlueDice}
+        onPress={handleDiceRoll}
       >
         <Image
-  source={DICE_IMAGE_BY_VALUE[active]}
+  source={DICE_IMAGE_BY_VALUE[diceValue]}
   style={{
-    width: currentDiceValue ? 54 : 46,
-    height: currentDiceValue ? 54 : 46,
+    width: 54,
+    height: 54,
     resizeMode: 'contain',
+    opacity: currentDiceValue || canRollBlueDice ? 1 : 0.45,
   }}
 />
       </TouchableOpacity>
+      {turnState?.mode === 'turn' && (
+        <Text
+          style={{
+            position: 'absolute',
+            top: s(56),
+            right: s(2),
+            fontSize: s(10),
+            color: isMyTurn ? '#111' : '#777',
+            fontWeight: '800',
+          }}
+        >
+          {isMyTurn && turnSecondsLeft !== null
+            ? `${turnSecondsLeft}s`
+            : 'WAIT'}
+        </Text>
+      )}
     </View>
   );
 })()}
@@ -2241,107 +2307,84 @@ boardMarkerText: {
   },
 
   // ─── TOP: TEAMS GRID ───
-  teamsGrid: {
+  teamsContainer: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     justifyContent: 'space-between',
     marginHorizontal: s(10),
     marginTop: s(10),
-    marginBottom: s(12),
+    marginBottom: s(8),
     gap: s(8),
   },
 
   teamCard: {
     width: '48%',
-    height: s(60),
-    backgroundColor: '#e0e0e0',
-    borderRadius: s(8),
+    backgroundColor: '#e1e1e1',
+    borderRadius: s(10),
     borderWidth: 3,
-    borderColor: '#ffffff',
+    borderColor: '#979797',
     paddingHorizontal: s(10),
-    paddingVertical: s(10),
-    alignItems: 'center',
+    paddingTop: s(14),
+    paddingBottom: s(10),
+    minHeight: s(40),
   },
 
-  teamCardActive: {
-    borderColor: '#2563eb',
-    borderWidth: 2,
-  },
-
-  numberBadge: {
+  teamNumberCircle: {
+    position: 'absolute',
+    top: -10,
+    alignSelf: 'center',
     width: s(22),
     height: s(22),
-    borderRadius: s(12),
-    backgroundColor: '#ffc107',
+    borderRadius: s(11),
+    backgroundColor: '#f2b000',
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: s(6),
-    bottom: s(20),
-    borderWidth: 1,
-    borderColor: '#9b7400',
-  },
-
-  numberText: {
-    color: '#9b7400',
-    fontWeight: '900',
-    fontSize: s(12),
-  },
-
-  teamName: {
-    width: '50%',
-    color: '#272727',
-    fontSize: s(12),
-    fontWeight: '600',
-    textAlign: 'center',
-    marginBottom: s(6),
-    minHeight: s(24),
-    bottom: s(22),
-    right: s(55),
-    lineHeight: s(14),
-  },
-
-  statsRow: {
-    flexDirection: 'row',
-    justifyContent: 'flex-end',
-    marginBottom: s(6),
-    position: 'absolute',
-    top: s(18),
-    left: s(90),
-  },
-
-  statItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: s(2),
-  },
-
-  statIcon: {
-    width: s(24),
-    height: s(24),
-    resizeMode: 'contain',
-  },
-
-  statText: {
-    color: '#434343',
-    fontWeight: '700',
-    fontSize: s(16),
-  },
-
-   badgeLabel:
-   {
-    right:s(74),
-    bottom:s(70),
-    backgroundColor: '#245abd',
-    paddingHorizontal: s(6),
-    paddingVertical: s(2),
-    borderRadius: s(12),
     zIndex: 10,
   },
 
-  badgeText: {
-    color: '#000000',
-    fontSize: s(8),
-    fontWeight: '700',
+  teamNumberText: {
+    color: '#000',
+    fontWeight: '900',
+    fontSize: s(11),
+  },
+
+  compactStatsContainer: {
+    // Keeps the top team card layout aligned with otherBoard.
+  },
+
+  compactRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    width: '100%',
+  },
+
+  compactItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    // paddingLeft: s(2),
+    gap: s(2),
+
+  },
+
+  compactIcon: {
+    width: s(20),
+    height: s(20),
+    resizeMode: 'contain',
+  },
+
+  compactText: {
+    color: '#000',
+    fontSize: s(11),
+    fontWeight: '800',
+  },
+
+  teamTitle: {
+    width: '50%',
+    color: '#000',
+    fontSize: s(13),
+    fontWeight: '800',
+    textAlign: 'left',
   },
 
   // ─── CENTER: BOARD ───

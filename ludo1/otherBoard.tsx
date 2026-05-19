@@ -310,7 +310,7 @@ interface Player {
   currentDiceRollBalance: number;
   home: number;
   rank?: number | null;
-  winPosition?: number | null;
+  winPosition?: number | null
   teamName?: string;
   lastMovedAt?: string;
   movesLost: number;

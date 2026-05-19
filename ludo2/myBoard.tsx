@@ -8,6 +8,9 @@ import {
   TouchableOpacity,
   View,
   ActivityIndicator,
+  LayoutAnimation,
+  Platform,
+  UIManager,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Icon from 'react-native-vector-icons/MaterialIcons';
@@ -40,6 +43,31 @@ const TILE_W = GRID_WIDTH / 15;
 const TILE_H = GRID_HEIGHT / 15;
 const PAWN_SIZE = Math.min(TILE_W, TILE_H) * 0.9;
 const PAWN_TIP = PAWN_SIZE * 0.86;
+const PAWN_STEP_DURATION = 170;
+
+if (
+  Platform.OS === 'android' &&
+  UIManager.setLayoutAnimationEnabledExperimental
+) {
+  UIManager.setLayoutAnimationEnabledExperimental(true);
+}
+
+const configurePawnMoveAnimation = () => {
+  LayoutAnimation.configureNext({
+    duration: PAWN_STEP_DURATION,
+    create: {
+      type: LayoutAnimation.Types.easeInEaseOut,
+      property: LayoutAnimation.Properties.opacity,
+    },
+    update: {
+      type: LayoutAnimation.Types.easeInEaseOut,
+    },
+    delete: {
+      type: LayoutAnimation.Types.easeInEaseOut,
+      property: LayoutAnimation.Properties.opacity,
+    },
+  });
+};
 const AREA_TRACK: Record<number, Array<[number, number]>> = {
   1: [
     [8, 9],
@@ -654,6 +682,7 @@ const [showChat, setShowChat] =
   ) => {
     try {
       if (!movedPawnData?.steps) {
+        configurePawnMoveAnimation();
         setPawns(prev => prev.map(p => (p.id === newPawn.id ? newPawn : p)));
 
         return;
@@ -662,6 +691,7 @@ const [showChat, setShowChat] =
       const steps = Number(movedPawnData.steps);
 
       if (!steps || steps <= 0) {
+        configurePawnMoveAnimation();
         setPawns(prev => prev.map(p => (p.id === newPawn.id ? newPawn : p)));
 
         return;
@@ -676,16 +706,19 @@ const [showChat, setShowChat] =
           currentPosition: currentPos,
         };
 
+        configurePawnMoveAnimation();
         setPawns(prev =>
           prev.map(p => (p.id === animatedPawn.id ? animatedPawn : p)),
         );
 
-        await sleep(50);
+        await sleep(PAWN_STEP_DURATION);
       }
 
+      configurePawnMoveAnimation();
       setPawns(prev => prev.map(p => (p.id === newPawn.id ? newPawn : p)));
     } catch (err) {
       // console.log('❌ animation error:', err);
+      configurePawnMoveAnimation();
       setPawns(prev => prev.map(p => (p.id === newPawn.id ? newPawn : p)));
     }
   };
