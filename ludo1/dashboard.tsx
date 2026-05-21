@@ -16,7 +16,6 @@ import Icon from 'react-native-vector-icons/MaterialIcons';
 import { io, Socket } from 'socket.io-client';
 import { API_BASE_URL, authHeaders } from '../api';
 import { useAuth } from '../auth/AuthContext';
-
 const { width: W, height: H } = Dimensions.get('window');
 const s = (size: number) => (W / 390) * size;
 

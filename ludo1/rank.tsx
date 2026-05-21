@@ -400,17 +400,14 @@ const LeaderboardScreen: React.FC = () => {
       
     }
 
-   if (activeTab === 'Player Rank') {
-  if (activeFilter === 'points') {
-    endpoint = '/api/flm/leaderboard/mr-points';
-  }
+ if (activeTab === 'Player Rank') {
+  endpoint = '/api/flm/leaderboard/mr-points';
 
   if (activeFilter === 'dice') {
-    endpoint =
-      '/api/flm/leaderboard/dice-roll-balance';
+    endpoint = '/api/flm/leaderboard/dice-roll-balance';
   }
 }
-    const params = new URLSearchParams({
+  const params = new URLSearchParams({
       limit: '10',
       userId: user?.id || '',
       userRole: (user?.role || '').toLowerCase(),

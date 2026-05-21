@@ -29,7 +29,7 @@ import DiceThree from '../assets/dice3.png';
 import DiceFour from '../assets/dice4.png';
 import DiceFive from '../assets/dice5.png';
 import DiceSix from '../assets/dice6.png';
-
+import Dice3DOther from '../components/Dice3DOther';
 // ─── CONSTANTS ───
 const { width: W, height: H } = Dimensions.get('window');
 const s = (size: number) => (Math.min(W, H) / 390) * size;
@@ -420,7 +420,9 @@ export default function OtherBoardScreen(): ReactElement {
   const { session, user } = useAuth();
   const isFlm = user?.role?.toLowerCase() === 'flm';
   const myFlmId = isFlm ? user?.id : user?.flmId;
-
+const [rollingPlayers, setRollingPlayers] = useState<
+  Record<string, boolean>
+>({});
   // ─── STATE ───
   const [boardId, setBoardId] = useState<number | null>(null);
   const [otherBoards, setOtherBoards] = useState<OtherBoard[]>([]);
@@ -703,8 +705,22 @@ export default function OtherBoardScreen(): ReactElement {
       setConnected(false);
     });
     socket.on('playerStartedRolling', (data: any) => {
-      console.log('🎲 playerStartedRolling', data);
-    });
+  console.log('🎲 playerStartedRolling', data);
+
+  if (data.boardId !== displayBoardId) return;
+
+  setRollingPlayers(prev => ({
+    ...prev,
+    [data.playerId]: true,
+  }));
+
+  setTimeout(() => {
+    setRollingPlayers(prev => ({
+      ...prev,
+      [data.playerId]: false,
+    }));
+  }, 850);
+});
     socket.on('diceRolled', (data: any) => {
       console.log('🎲 diceRolled', data);
 
@@ -946,14 +962,22 @@ export default function OtherBoardScreen(): ReactElement {
 
             {(() => {
   return (
-    <Image
-      source={DICE_IMAGE_BY_VALUE[diceValue == null ? 1 : diceValue]}
-      style={{
-        width: s(28),
-        height: s(28),
-        resizeMode: 'contain',
-      }}
-    />
+   <Dice3DOther
+  diceValue={diceValue || 1}
+  size={32}
+  position={
+    player.color === 'red'
+      ? 'topLeft'
+      : player.color === 'green'
+      ? 'topRight'
+      : player.color === 'yellow'
+      ? 'bottomRight'
+      : 'bottomLeft'
+  }
+  isPlayerStartedRolling={
+  rollingPlayers[player.playerId]
+}
+/>
   );
 })()}
 
@@ -987,22 +1011,22 @@ export default function OtherBoardScreen(): ReactElement {
               />
             ) : null}
 
-           {DICE_IMAGE_BY_VALUE[diceValue || 1] ? (
-  (() => {
-    return (
-      <Image
-        source={DICE_IMAGE_BY_VALUE[diceValue || 1]}
-        style={{
-          width: s(28),
-          height: s(28),
-          resizeMode: 'contain',
-        }}
-      />
-    );
-  })()
-) : (
-  <Text style={styles.fallbackDiceText}>No Dice</Text>
-)}
+           <Dice3DOther
+  diceValue={diceValue || 1}
+  size={32}
+  position={
+    player.color === 'red'
+      ? 'topLeft'
+      : player.color === 'green'
+      ? 'topRight'
+      : player.color === 'yellow'
+      ? 'bottomRight'
+      : 'bottomLeft'
+  }
+  isPlayerStartedRolling={
+  rollingPlayers[player.playerId]
+}
+/>
 
             <Text style={styles.lastMovedText}>
               {lastMovedAt
