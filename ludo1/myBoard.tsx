@@ -6,6 +6,9 @@ import React, {
   JSX,
   useMemo,
 } from 'react';
+import {
+  Modal,
+} from 'react-native';
 import AnimatedPawn from '../components/AnimatedPawn';
 import {
   Text,
@@ -408,6 +411,29 @@ function gridToPixel(col: number, row: number) {
   };
 }
 
+const getDicePosition = (
+  color?: string | null,
+) => {
+
+  switch (
+    color?.toLowerCase()
+  ) {
+
+    case 'red':
+      return 'topLeft';
+
+    case 'green':
+      return 'topRight';
+
+    case 'yellow':
+      return 'bottomRight';
+
+    case 'blue':
+    default:
+      return 'bottomLeft';
+  }
+};
+
 const TeamCard = React.memo(
   ({
     player,
@@ -468,21 +494,10 @@ const [rollingPlayers, setRollingPlayers] = useState<
                 : '—'}
             </Text>
 
-          <Dice3DOther
+       <Dice3DOther
   diceValue={diceValue || 1}
   size={32}
-  position={
-    player.color?.toLowerCase() ===
-    'yellow'
-      ? 'topLeft'
-      : player.color?.toLowerCase() ===
-        'red'
-      ? 'topRight'
-      : player.color?.toLowerCase() ===
-        'green'
-      ? 'bottomRight'
-      : 'bottomLeft'
-  }
+  position={getDicePosition(player.color)}
   isPlayerStartedRolling={
     rollingPlayers[
       player.playerId
@@ -525,18 +540,7 @@ const [rollingPlayers, setRollingPlayers] = useState<
            <Dice3DOther
   diceValue={diceValue || 1}
   size={32}
-  position={
-    player.color?.toLowerCase() ===
-    'red'
-      ? 'topLeft'
-      : player.color?.toLowerCase() ===
-        'green'
-      ? 'topRight'
-      : player.color?.toLowerCase() ===
-        'yellow'
-      ? 'bottomRight'
-      : 'bottomLeft'
-  }
+  position={getDicePosition(player.color)}
   isPlayerStartedRolling={
     rollingPlayers[
       player.playerId
@@ -824,8 +828,8 @@ const boardAnimatedStyle =
     fetchActivePlayers(bid);
   };
 
-  const sleep = (ms: number) =>
-    new Promise<void>(resolve => setTimeout(() => resolve(), ms));
+  // const sleep = (ms: number) =>
+  //   new Promise<void>(resolve => setTimeout(() => resolve(), ms));
 
 // ✅ CORRECTED animatePawnMovement - Replace your existing function
 
@@ -1133,6 +1137,10 @@ const boardAnimatedStyle =
           (p: any) => p.id === movedPawnDelta?.pawnId,
         );
 
+        // Track whether we should delay committing the moved pawn to avoid overwriting intermediate animation.
+        let commitDelayMs = 0;
+        let movedPawnIdForDelay: string | null = null;
+
         // If we have move data for this pawn, animate even if it went backwards (danger-zone)
         if (
           movedPawnDelta?.pawnId &&
@@ -1152,44 +1160,109 @@ const boardAnimatedStyle =
             const route = ROUTES_BY_COLOR[updatedMovedPawn.color] ||
               ROUTES_BY_COLOR.red;
 
-            const fromIndex = fromPos === 'finished' ? route.length : route.indexOf(fromPos);
-            const toIndex = toPos === 'finished' ? route.length : route.indexOf(toPos);
+            const fromIndex =
+              fromPos === 'finished' ? route.length : route.indexOf(fromPos);
+            const toIndex =
+              toPos === 'finished' ? route.length : route.indexOf(toPos);
 
             if (fromIndex !== -1 && toIndex !== -1) {
               const dir = toIndex > fromIndex ? 1 : -1;
-              const maxSteps = Math.min(40, Math.abs(toIndex - fromIndex));
-              let currentIndex = fromIndex;
 
-              // Apply intermediate positions.
-              for (let step = 1; step <= maxSteps; step++) {
-                const nextIndex = currentIndex + dir;
-                currentIndex = nextIndex;
-                const pos =
-                  currentIndex === route.length
-                    ? 'finished'
-                    : route[currentIndex];
+const totalSteps = Math.abs(
+  toIndex - fromIndex,
+);
 
-                setTimeout(() => {
-                  setPawns(prev =>
-                    prev.map(p =>
-                      p.id === updatedMovedPawn.id
-                        ? { ...p, currentPosition: pos }
-                        : p,
-                    ),
-                  );
-                }, step * 60);
-              }
+movedPawnIdForDelay = String(
+  updatedMovedPawn.id,
+);
+
+commitDelayMs =
+  totalSteps * 220 + 200;
+
+// IMPORTANT
+// use let INSIDE timeout loop
+for (
+  let step = 1;
+  step <= totalSteps;
+  step++
+) {
+
+  const targetIndex =
+    fromIndex + dir * step;
+
+  const pos =
+    targetIndex >= route.length
+      ? 'finished'
+      : route[targetIndex];
+
+  setTimeout(async () => {
+
+  await Promise.resolve();
+
+  setPawns(prev =>
+    prev.map(p =>
+      String(p.id) ===
+      String(updatedMovedPawn.id)
+        ? {
+            ...p,
+            currentPosition: pos,
+          }
+        : p,
+    ),
+  );
+
+}, step * 260);
+}
             }
           }
         }
 
-        // Finally commit backend state for all updated pawns
-        setPawns(prev =>
-          prev.map(p => {
-            const updated = d.updatedPawns.find((u: any) => u.id === p.id);
-            return updated || p;
-          }),
+        // Commit backend state for all updated pawns.
+        // If we animated a specific pawn step-by-step, delay committing that pawn until animation ends.
+        if (movedPawnIdForDelay) {
+          setTimeout(() => {
+
+  setPawns(prev =>
+    prev.map(p => {
+
+      const updated =
+        d.updatedPawns.find(
+          (u: any) =>
+            u.id === p.id,
         );
+
+      if (!updated) {
+        return p;
+      }
+
+      return {
+        ...p,
+        ...updated,
+      };
+    }),
+  );
+
+}, commitDelayMs + 50);
+        } else {
+          setPawns(prev =>
+            prev.map(p => {
+              const updated = d.updatedPawns.find((u: any) => u.id === p.id);
+              return updated || p;
+            }),
+          );
+        }
+
+        // Also update all OTHER pawns immediately (so kills/other side effects show fast).
+        if (movedPawnIdForDelay) {
+          setPawns(prev =>
+            prev.map(p => {
+              const updated = d.updatedPawns.find((u: any) => u.id === p.id);
+              if (!updated) return p;
+              if (String(p.id) === movedPawnIdForDelay) return p; // keep animated positions until commit
+              return updated;
+            }),
+          );
+        }
       }
     });
     return () => {
@@ -1427,53 +1500,136 @@ const getNextCellPositionBackendLike = (
   return `cell-area-${nextAreaId}-id-${nextCellNum}`;
 };
 
-const animateFrontendPawnMove = (
-  pawn: Pawn,
-  diceValue: number,
+// Backward step should be computed from the same route array used for forward.
+// This guarantees true inverse stepping and avoids mismatches with special forward rules.
+const getPreviousCellPositionBackendLike = (
+  currentPosition: string,
+  color: PawnColor,
 ) => {
-  let currentPosition = pawn.currentPosition;
-
-  const steps: string[] = [];
-
-  // Base -> start cell is server: if base and diceValue===6 => startPosition (areaId home, cell 14)
-  if ((!currentPosition || currentPosition === '0') && diceValue === 6) {
-    currentPosition = `cell-area-${HOME_AREA_BY_COLOR[pawn.color]}-id-14`;
-    steps.push(currentPosition);
-      } else {
-    // For each dice step, apply backend-like stepForward rules.
-    for (let i = 0; i < diceValue; i++) {
-      currentPosition = getNextCellPositionBackendLike(
-        currentPosition,
-        i,
-        pawn.color,
-        pawn.type,
-      );
-      steps.push(currentPosition);
-
-      if (currentPosition === 'finished') {
-        // stop early if we reach center/finished during intermediate animation
-        break;
-      }
-    }
+  if (!currentPosition || currentPosition === '0') {
+    return currentPosition;
+  }
+  if (currentPosition === 'finished') {
+    return currentPosition;
   }
 
-  // Apply intermediate animation (every dice step)
-  steps.forEach((position, index) => {
-    setTimeout(() => {
+  const route =
+    ROUTES_BY_COLOR[color] ||
+    ROUTES_BY_COLOR.red;
+  const idx = route.indexOf(currentPosition);
+  if (idx <= 0) {
+    return currentPosition;
+  }
+
+  return route[idx - 1];
+};
+
+const sleep = (ms: number) =>
+  new Promise<void>(resolve =>
+    setTimeout(() => resolve(), ms),
+  );
+const animateFrontendPawnMove =
+  async (
+    pawn: Pawn,
+    diceValue: number,
+    isBackward = false,
+  ) => {
+
+    let currentPosition =
+      pawn.currentPosition;
+
+    const steps: string[] = [];
+
+    // BASE -> START
+    if (
+      !isBackward &&
+      (
+        !currentPosition ||
+        currentPosition === '0'
+      ) &&
+      diceValue === 6
+    ) {
+
+      currentPosition =
+        `cell-area-${
+          HOME_AREA_BY_COLOR[
+            pawn.color
+          ]
+        }-id-14`;
+
+      steps.push(
+        currentPosition,
+      );
+
+    } else {
+
+      for (
+        let i = 0;
+        i < diceValue;
+        i++
+      ) {
+
+        // Backward steps: always use the same deterministic route array as forward
+        // so the intermediate positions are guaranteed to map on the board.
+        currentPosition = isBackward
+          ? (() => {
+              if (!currentPosition || currentPosition === '0') return currentPosition;
+              if (currentPosition === 'finished') return currentPosition;
+
+              const route =
+                ROUTES_BY_COLOR[pawn.color] ||
+                ROUTES_BY_COLOR.red;
+
+              const idx = route.indexOf(currentPosition);
+              if (idx <= 0) return currentPosition;
+              return route[idx - 1];
+            })()
+          : getNextCellPositionBackendLike(
+              currentPosition,
+              i,
+              pawn.color,
+              pawn.type,
+            );
+
+        steps.push(
+          currentPosition,
+        );
+
+        if (
+          currentPosition ===
+          'finished'
+        ) {
+          break;
+        }
+      }
+    }
+
+    // STEP BY STEP
+    for (
+      let i = 0;
+      i < steps.length;
+      i++
+    ) {
+
+      const position =
+        steps[i];
+
       setPawns(prev =>
         prev.map(p =>
           p.id === pawn.id
             ? {
                 ...p,
-                currentPosition: position,
+                currentPosition:
+                  position,
               }
             : p,
         ),
       );
-    }, index * 100);
-  });
-};
-const handlePawnClick = (pawn: Pawn) => {
+
+      await sleep(140);
+    }
+  };
+  const handlePawnClick =  async (pawn: Pawn) => {
   if (isMovePending) {
   return;
 }
@@ -1490,12 +1646,13 @@ setIsMovePending(true);
   const diceValue =
     currentDiceValue;
 
-  // clear immediately
-  
-
   // ===== TAK TAK TAK frontend move (visual only) =====
-
-  animateFrontendPawnMove(pawn, diceValue);
+  // NOTE: direction for click animation is not fully known without backend move result.
+  // We keep click animation as forward (backend will correct via pawnMoved event).
+await animateFrontendPawnMove(
+  pawn,
+  diceValue,
+);
 
   // ===== SOCKET IN BACKGROUND =====
   socketRef.current.emit(
@@ -1764,7 +1921,13 @@ onPress={
           handlePawnClick(pawn);
         } else {
           setSelectedPawn(pawn);
-          setMenuPosition({ x: pixel.left, y: pixel.top });
+        setMenuPosition({
+  x:
+    pixel.left +
+    PAWN_SIZE / 2,
+
+  y: pixel.top,
+});
           setShowPawnMenu(true);
         }
       }
@@ -2540,9 +2703,9 @@ onPress={
                 <Text
                   style={{
                     position: 'absolute',
-                    top: s(56),
-                    right: s(2),
-                    fontSize: s(10),
+                    top: s(20),
+                    right: s(80),
+                    fontSize: s(16),
                     color: isMyTurn ? '#111' : '#777',
                     fontWeight: '800',
                   }}
@@ -2607,52 +2770,90 @@ onPress={
         onRequestClose={closeAlert}
       />
 
-      {showPawnMenu && selectedPawn && (
-        <View
-          pointerEvents="box-none"
+      <Modal
+  visible={showPawnMenu}
+  transparent
+  animationType="fade"
+  onRequestClose={() => {
+    setShowPawnMenu(false);
+  }}
+>
+  <TouchableOpacity
+    activeOpacity={1}
+    onPress={() => {
+      setShowPawnMenu(false);
+    }}
+    style={{
+      flex: 1,
+    }}
+  >
+    <View
+      style={{
+        position: 'absolute',
+
+        left:
+          menuPosition.x -
+          s(12),
+
+        top:
+          menuPosition.y -
+          s(-250),
+
+        backgroundColor:
+          'rgba(255,255,255,0.97)',
+
+        borderRadius: s(12),
+
+        paddingVertical: s(10),
+
+        paddingHorizontal: s(14),
+
+        shadowColor: '#000',
+
+        shadowOpacity: 0.22,
+
+        shadowRadius: 10,
+
+        shadowOffset: {
+          width: 0,
+          height: 4,
+        },
+
+        elevation: 14,
+
+        borderWidth: 1,
+
+        borderColor:
+          'rgba(255,255,255,0.35)',
+      }}
+    >
+      <TouchableOpacity
+        activeOpacity={0.8}
+        onPress={() => {
+          setShowPawnMenu(false);
+
+          if (selectedPawn) {
+            handleGiveHeart(
+              selectedPawn,
+            );
+          }
+        }}
+      >
+        <Text
           style={{
-            position: 'absolute',
-            left: menuPosition.x,
-            top: menuPosition.y,
-            zIndex: 1000,
+            color: '#222',
+
+            fontWeight: '800',
+
+            fontSize: s(13),
           }}
         >
-          <View
-            style={{
-              width: s(120),
-              paddingVertical: s(6),
-              paddingHorizontal: s(8),
-              backgroundColor: 'rgba(0,0,0,0.85)',
-              borderRadius: s(10),
-              borderWidth: 1,
-              borderColor: 'rgba(255,255,255,0.25)',
-            }}
-          >
-            <TouchableOpacity
-              onPress={() => {
-                setShowPawnMenu(false);
-                handleGiveHeart(selectedPawn);
-              }}
-              style={{
-                paddingVertical: s(8),
-              }}
-            >
-              <Text style={{ color: '#fff', fontWeight: '800' }}>Give Heart</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              onPress={() => {
-                setShowPawnMenu(false);
-              }}
-              style={{
-                paddingVertical: s(8),
-              }}
-            >
-              <Text style={{ color: '#bbb', fontWeight: '800' }}>Close</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      )}
+          ❤️ Give Heart
+        </Text>
+      </TouchableOpacity>
+    </View>
+  </TouchableOpacity>
+</Modal>
     </SafeAreaView>
   );
 }

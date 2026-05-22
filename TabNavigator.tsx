@@ -8,7 +8,7 @@ import AlertModal, { AlertButton } from './components/AlertModal';
 
 import Dashboard from './ludo1/dashboard';
 import Rank from './ludo1/rank';
-import Notification from './tabs/notification';
+import Notification from './ludo1/notification';
 import Run from './ludo1/run3';
 import NewUpload from './ludo1/newupload';
 import Upload from './ludo1/uploads';

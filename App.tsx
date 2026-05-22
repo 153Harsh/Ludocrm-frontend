@@ -16,7 +16,7 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import WelcomeScreen from './auth/welcome';
 import LoginScreen from './auth/login';
 import TabNavigator from './TabNavigator';
-import ProfileScreen from './tabs/profile';
+import ProfileScreen from './ludo1/profile';
 import Toast from 'react-native-toast-message';
 import { toastConfig } from './components/toast';
 import {
