@@ -2,8 +2,8 @@ import { Platform } from 'react-native';
 
 export const API_BASE_URL =
   Platform.OS === 'android'
-    ? 'https://ludorx.digilateral.com'
-    : 'https://ludorx.digilateral.com';
+    ? 'http://192.168.1.115:4450'
+    : 'http://localhost:4450';
 
 export const authHeaders = (token?: string) => ({
   'Content-Type': 'application/json',

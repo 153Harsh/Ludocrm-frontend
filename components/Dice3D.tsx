@@ -113,12 +113,32 @@ const Dice3D = ({
           damping: 8,
         }),
       );
+      tiltX.value =
+  withSequence(
+    withTiming(-24, {
+      duration: 180,
+    }),
+
+    withSpring(-12),
+  );
+
+tiltY.value =
+  withSequence(
+    withTiming(24, {
+      duration: 180,
+    }),
+
+    withSpring(12),
+  );
   }, [rolling]);
 
   const animatedStyle =
     useAnimatedStyle(() => {
       return {
-        
+        shadowOpacity:
+  rolling ? 0.5 : 0.35,
+  shadowRadius:
+  rolling ? 18 : 12,
         transform: [
           {
             perspective: 900,
@@ -166,11 +186,20 @@ const Dice3D = ({
           animatedStyle,
         ]}
       >
+        {/* LEFT FACE */}
+<View style={styles.leftFace} />
+
+{/* RIGHT FACE */}
+<View style={styles.rightFace} />
+
+{/* BOTTOM FACE */}
+<View style={styles.bottomFace} />
         {/* LIGHT */}
         <View
           style={styles.gloss}
         />
-
+{/* INNER SHADOW */}
+<View style={styles.innerShadow} />
         {/* EDGE */}
         <View
           style={styles.edge}
@@ -204,6 +233,89 @@ const Dice3D = ({
 export default memo(Dice3D);
 
 const styles = StyleSheet.create({
+  leftFace: {
+  position: 'absolute',
+
+  left: -4,
+
+  top: 4,
+
+  width: 12,
+
+  height: 52,
+
+  borderTopLeftRadius: 16,
+
+  borderBottomLeftRadius: 16,
+
+  backgroundColor: '#dcdcdc',
+
+  opacity: 0.9,
+},
+
+rightFace: {
+  position: 'absolute',
+
+  right: -4,
+
+  top: 4,
+
+  width: 10,
+
+  height: 52,
+
+  borderTopRightRadius: 16,
+
+  borderBottomRightRadius: 16,
+
+  backgroundColor: '#ffffff',
+
+  opacity: 0.7,
+},
+
+bottomFace: {
+  position: 'absolute',
+
+  bottom: -5,
+
+  left: 4,
+
+  width: 52,
+
+  height: 12,
+
+  borderBottomLeftRadius: 16,
+
+  borderBottomRightRadius: 16,
+
+  backgroundColor: '#cfcfcf',
+
+  opacity: 0.9,
+},
+
+innerShadow: {
+  position: 'absolute',
+
+  inset: 0,
+
+  borderRadius: 20,
+
+  borderWidth: 1,
+
+  borderColor:
+    'rgba(0,0,0,0.04)',
+
+  shadowColor: '#000',
+
+  shadowOpacity: 0.18,
+
+  shadowRadius: 8,
+
+  shadowOffset: {
+    width: 0,
+    height: 3,
+  },
+},
   container: {
     width: 120,
     height: 120,
@@ -222,8 +334,8 @@ const styles = StyleSheet.create({
 
     borderRadius: 999,
 
-    // backgroundColor:
-    //   'rgba(0,0,0,0.22)',
+  //   backgroundColor:
+  // 'rgba(0,0,0,0.28)',
 
     bottom: 18,
 
@@ -254,7 +366,7 @@ const styles = StyleSheet.create({
 
     borderRadius: 20,
 
-    backgroundColor: '#ffffff',
+    backgroundColor: '#f8f8f8',
 
     overflow: 'hidden',
 
@@ -312,6 +424,10 @@ const styles = StyleSheet.create({
     borderRadius: 999,
 
     backgroundColor: '#111',
+    borderWidth: 1,
+
+borderColor:
+  'rgba(255,255,255,0.15)',
 
     transform: [
       {
@@ -325,7 +441,7 @@ const styles = StyleSheet.create({
 
     shadowColor: '#000',
 
-    shadowOpacity: 0.25,
+    shadowOpacity: 0.5,
 
     shadowRadius: 4,
 

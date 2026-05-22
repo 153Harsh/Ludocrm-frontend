@@ -213,6 +213,7 @@ interface Pawn {
   type: string;
   currentPosition: string;
   moves: number;
+  hasHeart?: number;
 }
 interface Player {
   playerId: string;
@@ -630,6 +631,19 @@ export default function MyBoardScreen(): React.ReactElement {
     'info' | 'error' | 'confirm'
   >('info');
   const [alertButtons, setAlertButtons] = useState<AlertButton[]>([]);
+
+
+  const [selectedPawn, setSelectedPawn] =
+  useState<Pawn | null>(null);
+
+const [menuPosition, setMenuPosition] =
+  useState({
+    x: 0,
+    y: 0,
+  });
+
+  const [showPawnMenu, setShowPawnMenu] =
+  useState(false);
 
   const showAlert = (opts: {
     title?: string;
@@ -1532,6 +1546,46 @@ setIsMovePending(true);
 // );
 };
 
+
+const handleGiveHeart = (pawn: Pawn) => {
+  if (!socketRef.current || !boardId) return;
+
+  if (pawn.hasHeart === 1) {
+    Toast.show({ type: 'error', text2: 'Pawn already has heart' });
+    return;
+  }
+
+  // Backend only allows hearts on main board pawns (type === 'main')
+  // Frontend uses position as a guard; backend will still validate type.
+  if (!pawn.currentPosition || pawn.currentPosition === '0' || pawn.currentPosition === 'finished') {
+    Toast.show({ type: 'error', text2: 'Heart can only be given on board cells' });
+    return;
+  }
+
+  socketRef.current.emit(
+    'givePawnHeart',
+    {
+      boardId,
+      pawnId: pawn.id,
+      playerId: myFlmId,
+      userId: user?.id,
+    },
+    (response: any) => {
+      if (!response?.ok) {
+        Toast.show({
+          type: 'error',
+          text2: response?.msg || 'Failed to give heart',
+        });
+        return;
+      }
+
+      Toast.show({
+        type: 'success',
+        text2: 'Heart given successfully',
+      });
+    },
+  );
+};
 const renderBoardPawns = useMemo(() => {
 
   // GROUP PAWNS BY POSITION
@@ -1649,12 +1703,12 @@ pawns
     : { x: 0, y: 0 };
 
           const isMyPawn =
-            String(pawn.playerId) ===
-            String(myFlmId);
-
+  String(pawn.playerId) ===
+    String(myFlmId) ||
+  String(pawn.playerId) ===
+    String(user?.id);
           const isTouchable =
   isMyPawn &&
-  !!currentDiceValue &&
   !isMovePending;
 
           elements.push(
@@ -1698,19 +1752,26 @@ pawns
         : 1,
   }}
 
-  isTouchable={
-    isTouchable
-  }
+  isEligible={
+  isTouchable &&
+  !!currentDiceValue
+}
 
-  onPress={
-    isTouchable
-      ? handlePawnClick.bind(
-          null,
-          pawn,
-        )
-      : undefined
-  }
+onPress={
+  isTouchable
+    ? () => {
+        if (currentDiceValue) {
+          handlePawnClick(pawn);
+        } else {
+          setSelectedPawn(pawn);
+          setMenuPosition({ x: pixel.left, y: pixel.top });
+          setShowPawnMenu(true);
+        }
+      }
+    : undefined
+}
 />
+        
           );
         },
       );
@@ -1744,11 +1805,13 @@ pawns
         const pos = positions[i];
         if (!pos) return;
         const pixel = gridToPixel(pos[0], pos[1]);
-        const isMyPawn =
-  String(pawn.playerId) === String(myFlmId);
+       const isMyPawn =
+  String(pawn.playerId) ===
+    String(myFlmId) ||
+  String(pawn.playerId) ===
+    String(user?.id);
         const isTouchable =
   isMyPawn &&
-  !!currentDiceValue &&
   !isMovePending;
         elements.push(
           <AnimatedPawn
@@ -1757,12 +1820,15 @@ pawns
   left={pixel.left}
   top={pixel.top}
   image={PAWN_IMAGES[getPerspectiveColor(pawn.color)]}
-  isTouchable={isTouchable}
+  isEligible={
+  isTouchable &&
+  !!currentDiceValue
+}
   onPress={
-    isTouchable
-      ? handlePawnClick.bind(null, pawn)
-      : undefined
-  }
+  isTouchable
+    ? handlePawnClick.bind(null, pawn)
+    : undefined
+}
   styles={styles}
 />
         );
@@ -2532,7 +2598,7 @@ pawns
         userId={user?.id}
       />
 
-      <AlertModal
+<AlertModal
         visible={alertVisible}
         title={alertTitle}
         message={alertMessage}
@@ -2540,6 +2606,53 @@ pawns
         buttons={alertButtons}
         onRequestClose={closeAlert}
       />
+
+      {showPawnMenu && selectedPawn && (
+        <View
+          pointerEvents="box-none"
+          style={{
+            position: 'absolute',
+            left: menuPosition.x,
+            top: menuPosition.y,
+            zIndex: 1000,
+          }}
+        >
+          <View
+            style={{
+              width: s(120),
+              paddingVertical: s(6),
+              paddingHorizontal: s(8),
+              backgroundColor: 'rgba(0,0,0,0.85)',
+              borderRadius: s(10),
+              borderWidth: 1,
+              borderColor: 'rgba(255,255,255,0.25)',
+            }}
+          >
+            <TouchableOpacity
+              onPress={() => {
+                setShowPawnMenu(false);
+                handleGiveHeart(selectedPawn);
+              }}
+              style={{
+                paddingVertical: s(8),
+              }}
+            >
+              <Text style={{ color: '#fff', fontWeight: '800' }}>Give Heart</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              onPress={() => {
+                setShowPawnMenu(false);
+              }}
+              style={{
+                paddingVertical: s(8),
+              }}
+            >
+              <Text style={{ color: '#bbb', fontWeight: '800' }}>Close</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
     </SafeAreaView>
   );
 }
