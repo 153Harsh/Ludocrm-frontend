@@ -223,7 +223,7 @@ const ProfilePage = () => {
   // For MR, use the manager/FLM id fetched into `profile.managerId` (e.g. E31671)
   // because `user?.flmId` can be empty in the AuthContext.
   // Force creatorId for board status filtering
-  const creatorId = 'A1234';
+  const creatorId = 'S1101';
   const profileTeamLogo = getTeamLogo(profile.teamName);
 
   const renderTeamLogo = (team?: string | null) => {

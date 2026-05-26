@@ -2,7 +2,7 @@ import { Platform } from 'react-native';
 
 export const API_BASE_URL =
   Platform.OS === 'android'
-    ? 'http://192.168.1.115:4450'
+    ? 'http://192.168.1.23:4451'
     : 'http://localhost:4450';
 
 export const authHeaders = (token?: string) => ({

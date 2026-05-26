@@ -1,4 +1,7 @@
-import React, { useRef, useState } from 'react';
+import React, { useRef, useState, useEffect } from 'react';
+
+import { useAuth } from './auth/AuthContext';
+
 
 import { Image } from 'react-native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
@@ -6,14 +9,20 @@ import Icon from 'react-native-vector-icons/MaterialIcons';
 
 import AlertModal, { AlertButton } from './components/AlertModal';
 
-import Dashboard from './ludo1/dashboard';
-import Rank from './ludo1/rank';
-import Notification from './ludo1/notification';
-import Run from './ludo1/run3';
-import NewUpload from './ludo1/newupload';
-import Upload from './ludo1/uploads';
+
+import Dashboard from './ludo2/dashboard';
+import Rank from './ludo2/rank';
+import Notification from './ludo2/notification';
+import Run from './ludo2/run';
+import NewUpload from './ludo2/newupload';
+
+import Upload from './ludo2/uploads';
 
 import { API_BASE_URL, authHeaders } from './api';
+
+const isMrUser = (role?: string | null) =>
+  String(role || '').toLowerCase() === 'mr';
+
 
 const diceIcon = require('./assets/newAssets/bgdice.png');
 
@@ -48,6 +57,10 @@ const isCurrentUserActiveOnBoard = async () => {
 
 const TabNavigator = () => {
   const Tab = createBottomTabNavigator();
+
+  const { user } = useAuth();
+  const showNewUpload = isMrUser(user?.role);
+
 
   const [alertVisible, setAlertVisible] = useState(false);
   const [alertTitle, setAlertTitle] = useState('');
@@ -210,11 +223,14 @@ const TabNavigator = () => {
           listeners={createLeaveRunListener('Rank')}
         />
 
-        <Tab.Screen
-          name="NewUpload"
-          component={NewUpload}
-          listeners={createLeaveRunListener('NewUpload')}
-        />
+        {showNewUpload && (
+          <Tab.Screen
+            name="NewUpload"
+            component={NewUpload}
+            listeners={createLeaveRunListener('NewUpload')}
+          />
+        )}
+
 
         <Tab.Screen
           name="Upload"

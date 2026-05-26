@@ -32,6 +32,7 @@ import DiceThree from '../assets/dice3.png';
 import DiceFour from '../assets/dice4.png';
 import DiceFive from '../assets/dice5.png';
 import DiceSix from '../assets/dice6.png';
+import Toast from 'react-native-toast-message';
 
 // ─── CONSTANTS ───
 const { width: W, height: H } = Dimensions.get('window');
@@ -788,10 +789,24 @@ export default function OtherBoardScreen(): ReactElement {
       setDiceRows(updatedDice);
     });
     socket.on('activePlayerJoined', (data: any) => {
-      console.log('🟣 activePlayerJoined', data);
+      // console.log('🟣 activePlayerJoined', data);
+      Toast.show({
+          type: 'success',
+          text1: 'Player Joined',
+          text2: `${data?.playerName || 'A player'} joined the board`,
+          position: 'top',
+          visibilityTime: 3000,
+        });
     });
     socket.on('activePlayerLeft', (data: any) => {
-      console.log('🔴 activePlayerLeft', data);
+      // console.log('🔴 activePlayerLeft', data);
+      Toast.show({
+        type: 'error',
+        text1: 'Player Left',
+        text2: `${data?.playerName || 'A player'} left the board`,
+        position: 'top',
+        visibilityTime: 3000,
+      });
     });
     socket.on('pawnMoved', async (delta: any) => {
       const d = delta?.data;
